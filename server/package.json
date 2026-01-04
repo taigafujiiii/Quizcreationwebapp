@@ -1,0 +1,41 @@
+{
+  "name": "quiz-app-server",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio",
+    "seed": "tsx src/seed.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@prisma/client": "5.22.0",
+    "bcryptjs": "2.4.3",
+    "cookie": "0.6.0",
+    "cookie-parser": "1.4.6",
+    "cors": "2.8.5",
+    "dotenv": "16.4.7",
+    "express": "4.19.2",
+    "express-rate-limit": "7.4.1",
+    "helmet": "7.1.0",
+    "jsonwebtoken": "9.0.2",
+    "zod": "3.24.1"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "1.4.7",
+    "@types/express": "4.17.21",
+    "@types/jsonwebtoken": "9.0.6",
+    "@types/node": "20.17.12",
+    "@types/supertest": "2.0.16",
+    "prisma": "5.22.0",
+    "supertest": "6.3.4",
+    "tsx": "4.19.2",
+    "typescript": "5.7.3",
+    "vitest": "1.6.0"
+  }
+}
