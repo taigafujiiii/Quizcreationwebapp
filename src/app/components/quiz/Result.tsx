@@ -1,8 +1,10 @@
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
+import { Alert, AlertDescription } from '../ui/alert';
+import { Header } from '../layout/Header';
 import { Question, QuizAnswer, QuizResult } from '../../types';
 import { CheckCircle, XCircle, Home } from 'lucide-react';
 
@@ -41,8 +43,11 @@ export const Result: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 px-4 py-8">
-      <div className="max-w-4xl mx-auto">
+    <div className="min-h-screen bg-gray-50">
+      {/* ヘッダー */}
+      <Header />
+
+      <div className="max-w-4xl mx-auto px-4 py-8">
         {/* サマリーカード */}
         <Card className="mb-8">
           <CardHeader>

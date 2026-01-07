@@ -1,13 +1,20 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
-import { LogOut, BookOpen, FolderOpen, FileQuestion, Mail } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
+import { Input } from '../ui/input';
+import { Label } from '../ui/label';
+import { Header } from '../layout/Header';
+import { LogOut, BookOpen, FolderOpen, FileQuestion, Mail, ClipboardList, Users } from 'lucide-react';
+import { toast } from 'sonner';
 
 export const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
+  const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
 
   const menuItems = [
     {
@@ -32,34 +39,74 @@ export const AdminDashboard: React.FC = () => {
       color: 'text-purple-600 bg-purple-50',
     },
     {
+      title: '課題管理',
+      description: '課題問題の作成・管理',
+      icon: ClipboardList,
+      path: '/admin/assignments',
+      color: 'text-orange-600 bg-orange-50',
+    },
+    {
       title: '管理者招待',
       description: '新しい管理者を招待',
       icon: Mail,
-      path: '/admin/invites',
-      color: 'text-orange-600 bg-orange-50',
+      path: null, // モーダルを開く
+      color: 'text-pink-600 bg-pink-50',
+    },
+    {
+      title: 'ユーザー管理',
+      description: 'ユーザーの作成・編集・削除',
+      icon: Users,
+      path: '/admin/users',
+      color: 'text-gray-600 bg-gray-50',
     },
   ];
 
+  const handleCardClick = (item: typeof menuItems[0]) => {
+    if (item.path === null) {
+      // 管理者招待の場合はモーダルを開く
+      setIsInviteDialogOpen(true);
+    } else {
+      // その他の場合は画面遷移
+      navigate(item.path);
+    }
+  };
+
+  const handleSendInvite = () => {
+    if (!inviteEmail) {
+      toast.error('メールアドレスを入力してください');
+      return;
+    }
+
+    // メールアドレスの簡易バリデーション
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(inviteEmail)) {
+      toast.error('有効なメールアドレスを入力してください');
+      return;
+    }
+
+    // TODO: 実際の招待処理をここに実装
+    toast.success(`${inviteEmail}に招待メールを送信しました`);
+    setIsInviteDialogOpen(false);
+    setInviteEmail('');
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50 px-4 py-8">
-      <div className="max-w-6xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="text-3xl mb-2">管理者ダッシュボード</h1>
-            <p className="text-gray-600">ようこそ、{user?.email} さん</p>
-          </div>
-          <Button variant="outline" onClick={logout}>
-            <LogOut className="h-4 w-4 mr-2" />
-            ログアウト
-          </Button>
+    <div className="min-h-screen bg-gray-50">
+      {/* ヘッダー */}
+      <Header />
+
+      <div className="max-w-6xl mx-auto px-4 py-8">
+        <div className="mb-8">
+          <h1 className="text-2xl sm:text-3xl mb-2">管理者ダッシュボード</h1>
+          <p className="text-gray-600">管理機能を選択してください</p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {menuItems.map((item) => (
+          {menuItems.map((item, index) => (
             <Card
-              key={item.path}
+              key={item.path || `invite-${index}`}
               className="cursor-pointer hover:shadow-lg transition-shadow"
-              onClick={() => navigate(item.path)}
+              onClick={() => handleCardClick(item)}
             >
               <CardHeader>
                 <div className="flex items-start gap-4">
@@ -81,6 +128,33 @@ export const AdminDashboard: React.FC = () => {
           ))}
         </div>
       </div>
+
+      {/* 管理者招待モーダル */}
+      <Dialog open={isInviteDialogOpen} onOpenChange={setIsInviteDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>管理者招待</DialogTitle>
+            <DialogDescription>新しい管理者を招待します</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="email">メールアドレス</Label>
+              <Input
+                id="email"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                className="col-span-3"
+              />
+            </div>
+          </div>
+          <Button
+            className="w-full"
+            onClick={handleSendInvite}
+          >
+            招待メールを送信
+          </Button>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

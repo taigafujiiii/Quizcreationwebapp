@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import { Badge } from '../ui/badge';
+import { Header } from '../layout/Header';
 import { mockQuestions, mockCategories } from '../../data/mockData';
 import { Question } from '../../types';
 import { ArrowLeft, Plus, Edit, Trash2 } from 'lucide-react';
@@ -104,8 +105,11 @@ export const QuestionsManagement: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 px-4 py-8">
-      <div className="max-w-7xl mx-auto">
+    <div className="min-h-screen bg-gray-50">
+      {/* ヘッダー */}
+      <Header />
+
+      <div className="max-w-7xl mx-auto px-4 py-8">
         <div className="flex items-center gap-4 mb-8">
           <Button variant="outline" onClick={() => navigate('/admin')}>
             <ArrowLeft className="h-4 w-4 mr-2" />
@@ -299,7 +303,14 @@ export const QuestionsManagement: React.FC = () => {
                 {questions.map((question) => (
                   <TableRow key={question.id}>
                     <TableCell className="max-w-md truncate">
-                      {question.text}
+                      <div className="flex items-center gap-2">
+                        {question.text}
+                        {question.isAssignment && (
+                          <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
+                            課題
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline">

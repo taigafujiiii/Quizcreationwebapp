@@ -1,20 +1,32 @@
-import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Alert, AlertDescription } from '../ui/alert';
-import { Mail, Lock } from 'lucide-react';
+import { Mail, Lock, CheckCircle } from 'lucide-react';
 
 export const Login: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+
+  // 招待登録完了後のメッセージ表示
+  useEffect(() => {
+    if (location.state?.registrationComplete) {
+      setSuccessMessage('登録が完了しました。ログインしてください。');
+      // 5秒後にメッセージを消す
+      const timer = setTimeout(() => setSuccessMessage(''), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [location]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,7 +40,7 @@ export const Login: React.FC = () => {
       if (email.includes('admin')) {
         navigate('/admin');
       } else {
-        navigate('/');
+        navigate('/'); // ユーザーはHomeに遷移
       }
     } catch (err) {
       setError('ログインに失敗しました');
@@ -51,6 +63,13 @@ export const Login: React.FC = () => {
             {error && (
               <Alert variant="destructive">
                 <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+
+            {successMessage && (
+              <Alert variant="success">
+                <CheckCircle className="h-4 w-4" />
+                <AlertDescription>{successMessage}</AlertDescription>
               </Alert>
             )}
 
@@ -100,10 +119,7 @@ export const Login: React.FC = () => {
             </Button>
 
             <div className="text-center text-sm text-gray-600">
-              アカウントをお持ちでない方は{' '}
-              <Link to="/register" className="text-blue-600 hover:underline">
-                新規登録
-              </Link>
+              このサービスは招待制です。招待メールをご確認ください。
             </div>
           </form>
         </CardContent>

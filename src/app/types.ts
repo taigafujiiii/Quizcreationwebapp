@@ -4,6 +4,10 @@ export interface User {
   email: string;
   role: 'user' | 'admin';
   verified: boolean;
+  isActive?: boolean; // 削除済みフラグ（false = 削除済み）
+  createdAt?: string; // 登録日時
+  username?: string; // ユーザー名
+  allowedUnitIds?: string[]; // 学習可能な単元ID（USERのみ、ADMINは常に全単元）
 }
 
 export interface Unit {
@@ -30,6 +34,7 @@ export interface Question {
   explanation: string;
   categoryId: string;
   isActive: boolean;
+  isAssignment?: boolean; // 課題フラグ
 }
 
 export interface QuizAnswer {
@@ -47,3 +52,4 @@ export interface QuizResult {
 }
 
 export type QuizMode = 'unit' | 'category' | 'multiple';
+export type CourseType = 'free' | 'assignment'; // コースタイプ追加

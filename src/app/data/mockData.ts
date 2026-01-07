@@ -1,4 +1,67 @@
-import { Unit, Category, Question } from '../types';
+import { Unit, Category, Question, User } from '../types';
+
+export const mockUsers: User[] = [
+  {
+    id: 'user1',
+    email: 'admin@example.com',
+    role: 'admin',
+    verified: true,
+    isActive: true,
+    createdAt: '2024-01-15T10:30:00Z',
+    username: '管理者 太郎',
+    // ADMINは常に全単元（allowedUnitIdsは不要）
+  },
+  {
+    id: 'user2',
+    email: 'user1@example.com',
+    role: 'user',
+    verified: true,
+    isActive: true,
+    createdAt: '2024-02-01T14:20:00Z',
+    username: '山田 太郎',
+    allowedUnitIds: ['u1', 'u2'], // プログラミング基礎、Web開発
+  },
+  {
+    id: 'user3',
+    email: 'user2@example.com',
+    role: 'user',
+    verified: true,
+    isActive: true,
+    createdAt: '2024-02-10T09:15:00Z',
+    username: '佐藤 花子',
+    allowedUnitIds: ['u1', 'u2', 'u3'], // 全単元
+  },
+  {
+    id: 'user4',
+    email: 'user3@example.com',
+    role: 'user',
+    verified: false,
+    isActive: true,
+    createdAt: '2024-03-05T16:45:00Z',
+    username: '鈴木 一郎',
+    allowedUnitIds: [], // 許可単元0件（新規ユーザー例）
+  },
+  {
+    id: 'user5',
+    email: 'deleted@example.com',
+    role: 'user',
+    verified: true,
+    isActive: false, // 削除済み
+    createdAt: '2024-01-20T11:00:00Z',
+    username: '削除済みユーザー',
+    allowedUnitIds: ['u1'],
+  },
+  {
+    id: 'user6',
+    email: 'admin2@example.com',
+    role: 'admin',
+    verified: true,
+    isActive: true,
+    createdAt: '2024-02-20T13:30:00Z',
+    // username未設定のADMIN例
+    // ADMINは常に全単元
+  },
+];
 
 export const mockUnits: Unit[] = [
   {
@@ -63,6 +126,7 @@ export const mockQuestions: Question[] = [
     explanation: 'letは再代入可能な変数を定義するキーワードです。constは再代入不可、varは古い書き方です。',
     categoryId: 'c1',
     isActive: true,
+    isAssignment: true, // 課題問題
   },
   {
     id: 'q2',
@@ -75,6 +139,7 @@ export const mockQuestions: Question[] = [
     explanation: 'JavaScriptにはIntegerという型はありません。数値はすべてNumber型です。',
     categoryId: 'c1',
     isActive: true,
+    isAssignment: true, // 課題問題
   },
   {
     id: 'q3',
@@ -87,6 +152,7 @@ export const mockQuestions: Question[] = [
     explanation: 'if文の条件式は必ず括弧()で囲む必要があります。',
     categoryId: 'c2',
     isActive: true,
+    isAssignment: false,
   },
   {
     id: 'q4',
@@ -99,6 +165,7 @@ export const mockQuestions: Question[] = [
     explanation: '<p>タグが段落を表すHTMLの標準タグです。',
     categoryId: 'c3',
     isActive: true,
+    isAssignment: true, // 課題問題
   },
   {
     id: 'q5',
@@ -111,6 +178,7 @@ export const mockQuestions: Question[] = [
     explanation: 'background-colorが背景色を指定する正式なプロパティです。backgroundでも可能ですが、より包括的なプロパティです。',
     categoryId: 'c4',
     isActive: true,
+    isAssignment: false,
   },
   {
     id: 'q6',
@@ -123,6 +191,7 @@ export const mockQuestions: Question[] = [
     explanation: 'SELECTがデータを取得するための標準SQLコマンドです。',
     categoryId: 'c5',
     isActive: true,
+    isAssignment: true, // 課題問題
   },
   {
     id: 'q7',
@@ -135,6 +204,7 @@ export const mockQuestions: Question[] = [
     explanation: 'lengthプロパティが配列やstrのようなオブジェクトの要素数を返します。',
     categoryId: 'c1',
     isActive: true,
+    isAssignment: false,
   },
   {
     id: 'q8',
@@ -147,5 +217,6 @@ export const mockQuestions: Question[] = [
     explanation: 'JavaScriptのfor文は「for (初期化; 条件; 増減)」の形式です。',
     categoryId: 'c2',
     isActive: true,
+    isAssignment: true, // 課題問題
   },
 ];

@@ -5,19 +5,30 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Alert, AlertDescription } from '../ui/alert';
-import { Mail, Lock, CheckCircle } from 'lucide-react';
+import { Mail, Lock, CheckCircle, User } from 'lucide-react';
 
 export const Register: React.FC = () => {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    if (!username.trim()) {
+      setError('ユーザー名を入力してください');
+      return;
+    }
+
+    if (username.length > 50) {
+      setError('ユーザー名は50文字以内で入力してください');
+      return;
+    }
 
     if (password !== confirmPassword) {
       setError('パスワードが一致しません');
@@ -69,6 +80,23 @@ export const Register: React.FC = () => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="pl-10"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="username">ユーザー名</Label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+                <Input
+                  id="username"
+                  type="text"
+                  placeholder="例）山田 太郎"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="pl-10"
+                  maxLength={50}
                   required
                 />
               </div>

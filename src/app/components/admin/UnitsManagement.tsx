@@ -7,6 +7,7 @@ import { Textarea } from '../ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '../ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
+import { Header } from '../layout/Header';
 import { mockUnits } from '../../data/mockData';
 import { Unit } from '../../types';
 import { ArrowLeft, Plus, Edit, Trash2 } from 'lucide-react';
@@ -58,8 +59,11 @@ export const UnitsManagement: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 px-4 py-8">
-      <div className="max-w-6xl mx-auto">
+    <div className="min-h-screen bg-gray-50">
+      {/* ヘッダー */}
+      <Header />
+
+      <div className="max-w-6xl mx-auto px-4 py-8">
         <div className="flex items-center gap-4 mb-8">
           <Button variant="outline" onClick={() => navigate('/admin')}>
             <ArrowLeft className="h-4 w-4 mr-2" />

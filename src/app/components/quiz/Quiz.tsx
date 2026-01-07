@@ -5,6 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Progress } from '../ui/progress';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
 import { Label } from '../ui/label';
+import { Badge } from '../ui/badge';
+import { Header } from '../layout/Header';
+import { ExitQuizModal } from '../layout/ExitQuizModal';
 import { mockQuestions } from '../../data/mockData';
 import { Question, QuizAnswer } from '../../types';
 import { AlertCircle } from 'lucide-react';
@@ -12,38 +15,49 @@ import { AlertCircle } from 'lucide-react';
 export const Quiz: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { mode, unitId, categoryId, categoryIds, questionCount } =
+  const { mode, unitId, categoryId, categoryIds, questionCount, courseType } =
     location.state || {};
 
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<QuizAnswer[]>([]);
   const [selectedAnswer, setSelectedAnswer] = useState<string>('');
+  const [showExitModal, setShowExitModal] = useState(false);
+
+  const isAssignmentCourse = courseType === 'assignment';
 
   useEffect(() => {
     // クイズ問題を取得
     let filtered = mockQuestions.filter((q) => q.isActive);
 
-    if (mode === 'category') {
-      filtered = filtered.filter((q) => q.categoryId === categoryId);
-    } else if (mode === 'multiple') {
-      filtered = filtered.filter((q) => categoryIds.includes(q.categoryId));
-    } else if (mode === 'unit') {
-      // 単元に属するカテゴリの問題を取得
-      const unitCategories = mockQuestions
-        .map((q) => q.categoryId)
-        .filter((catId) => {
-          const cat = mockQuestions.find((q) => q.categoryId === catId);
-          return cat !== undefined;
-        });
-      filtered = filtered.filter((q) => unitCategories.includes(q.categoryId));
+    if (isAssignmentCourse) {
+      // 課題コースの場合：該当カテゴリの課題問題のみ
+      filtered = filtered.filter(
+        (q) => q.categoryId === categoryId && q.isAssignment
+      );
+    } else {
+      // 自由演習コースの場合：既存のロジック
+      if (mode === 'category') {
+        filtered = filtered.filter((q) => q.categoryId === categoryId);
+      } else if (mode === 'multiple') {
+        filtered = filtered.filter((q) => categoryIds.includes(q.categoryId));
+      } else if (mode === 'unit') {
+        const unitCategories = mockQuestions
+          .map((q) => q.categoryId)
+          .filter((catId) => {
+            const cat = mockQuestions.find((q) => q.categoryId === catId);
+            return cat !== undefined;
+          });
+        filtered = filtered.filter((q) => unitCategories.includes(q.categoryId));
+      }
+
+      // 自由演習の場合はシャッフルして指定数だけ取得
+      const shuffled = [...filtered].sort(() => Math.random() - 0.5);
+      filtered = shuffled.slice(0, Math.min(questionCount, filtered.length));
     }
 
-    // シャッフルして指定数だけ取得
-    const shuffled = [...filtered].sort(() => Math.random() - 0.5);
-    const selected = shuffled.slice(0, Math.min(questionCount, filtered.length));
-    setQuestions(selected);
-  }, [mode, unitId, categoryId, categoryIds, questionCount]);
+    setQuestions(filtered);
+  }, [mode, unitId, categoryId, categoryIds, questionCount, courseType, isAssignmentCourse]);
 
   const currentQuestion = questions[currentIndex];
   const progress = ((currentIndex + 1) / questions.length) * 100;
@@ -73,6 +87,15 @@ export const Quiz: React.FC = () => {
     }
   };
 
+  const handleHomeClick = () => {
+    setShowExitModal(true);
+  };
+
+  const handleExitConfirm = () => {
+    const homeRoute = '/';
+    navigate(homeRoute);
+  };
+
   if (questions.length === 0) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
@@ -93,8 +116,29 @@ export const Quiz: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 px-4 py-8">
-      <div className="max-w-3xl mx-auto">
+    <div className="min-h-screen bg-gray-50">
+      {/* ヘッダー */}
+      <Header
+        courseType={isAssignmentCourse ? 'assignment' : 'free'}
+        isQuizAttempt={true}
+        onHomeClick={handleHomeClick}
+      />
+
+      {/* 中断確認モーダル */}
+      <ExitQuizModal
+        open={showExitModal}
+        onOpenChange={setShowExitModal}
+        onConfirm={handleExitConfirm}
+      />
+
+      <div className="max-w-3xl mx-auto px-4 py-8">
+        {/* コース表示バッジ */}
+        {isAssignmentCourse && (
+          <div className="mb-4">
+            <Badge className="bg-green-600">課題コース</Badge>
+          </div>
+        )}
+
         {/* 進捗表示 */}
         <div className="mb-6">
           <div className="flex justify-between items-center mb-2">

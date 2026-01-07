@@ -2,15 +2,22 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Login } from './components/auth/Login';
-import { Register } from './components/auth/Register';
+import { AcceptInvite } from './components/auth/AcceptInvite';
 import { Verify } from './components/auth/Verify';
 import { Forgot } from './components/auth/Forgot';
+import { Home } from './components/user/Home';
 import { QuizSetup } from './components/quiz/QuizSetup';
 import { Quiz } from './components/quiz/Quiz';
 import { Result } from './components/quiz/Result';
+import { UnitSelect } from './components/assignment/UnitSelect';
+import { CategoryList } from './components/assignment/CategoryList';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { UnitsManagement } from './components/admin/UnitsManagement';
+import { CategoriesManagement } from './components/admin/CategoriesManagement';
 import { QuestionsManagement } from './components/admin/QuestionsManagement';
+import { AssignmentsManagement } from './components/admin/AssignmentsManagement';
+import { UsersManagement } from './components/admin/UsersManagement';
+import { Toaster } from './components/ui/sonner';
 
 // 認証が必要なルートのラッパー
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -44,13 +51,21 @@ const AppRoutes: React.FC = () => {
     <Routes>
       {/* 認証ルート */}
       <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
+      <Route path="/accept-invite" element={<AcceptInvite />} />
       <Route path="/verify" element={<Verify />} />
       <Route path="/forgot" element={<Forgot />} />
       
       {/* ユーザールート（認証必要） */}
       <Route
         path="/"
+        element={
+          <ProtectedRoute>
+            <Home />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/quiz/setup"
         element={
           <ProtectedRoute>
             <QuizSetup />
@@ -73,6 +88,22 @@ const AppRoutes: React.FC = () => {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/assignment/units"
+        element={
+          <ProtectedRoute>
+            <UnitSelect />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/assignment/categories/:unitId"
+        element={
+          <ProtectedRoute>
+            <CategoryList />
+          </ProtectedRoute>
+        }
+      />
       
       {/* 管理者ルート（管理者権限必要） */}
       <Route
@@ -92,10 +123,34 @@ const AppRoutes: React.FC = () => {
         }
       />
       <Route
+        path="/admin/categories"
+        element={
+          <AdminRoute>
+            <CategoriesManagement />
+          </AdminRoute>
+        }
+      />
+      <Route
         path="/admin/questions"
         element={
           <AdminRoute>
             <QuestionsManagement />
+          </AdminRoute>
+        }
+      />
+      <Route
+        path="/admin/assignments"
+        element={
+          <AdminRoute>
+            <AssignmentsManagement />
+          </AdminRoute>
+        }
+      />
+      <Route
+        path="/admin/users"
+        element={
+          <AdminRoute>
+            <UsersManagement />
           </AdminRoute>
         }
       />
@@ -111,6 +166,7 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <AppRoutes />
+        <Toaster />
       </AuthProvider>
     </BrowserRouter>
   );
