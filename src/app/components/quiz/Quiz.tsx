@@ -283,36 +283,37 @@ export const Quiz: React.FC = () => {
             {currentQuestion.answerMethod === 'radio' ? (
               <RadioGroup value={selectedAnswer} onValueChange={setSelectedAnswer}>
                 <div className="space-y-3">
-                  <div className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-gray-50 cursor-pointer">
-                    <RadioGroupItem value="A" id="A" />
-                    <Label htmlFor="A" className="cursor-pointer flex-1">
-                      A. {currentQuestion.optionA}
-                    </Label>
-                  </div>
-                  <div className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-gray-50 cursor-pointer">
-                    <RadioGroupItem value="B" id="B" />
-                    <Label htmlFor="B" className="cursor-pointer flex-1">
-                      B. {currentQuestion.optionB}
-                    </Label>
-                  </div>
-                  <div className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-gray-50 cursor-pointer">
-                    <RadioGroupItem value="C" id="C" />
-                    <Label htmlFor="C" className="cursor-pointer flex-1">
-                      C. {currentQuestion.optionC}
-                    </Label>
-                  </div>
-                  <div className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-gray-50 cursor-pointer">
-                    <RadioGroupItem value="D" id="D" />
-                    <Label htmlFor="D" className="cursor-pointer flex-1">
-                      D. {currentQuestion.optionD}
-                    </Label>
-                  </div>
-                  <div className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-gray-50 cursor-pointer">
-                    <RadioGroupItem value="unknown" id="unknown" />
-                    <Label htmlFor="unknown" className="cursor-pointer flex-1">
-                      わからない
-                    </Label>
-                  </div>
+                  {(
+                    [
+                      { value: 'A', label: `A. ${currentQuestion.optionA}` },
+                      { value: 'B', label: `B. ${currentQuestion.optionB}` },
+                      { value: 'C', label: `C. ${currentQuestion.optionC}` },
+                      { value: 'D', label: `D. ${currentQuestion.optionD}` },
+                      { value: 'unknown', label: 'わからない' },
+                    ] as const
+                  ).map((opt) => {
+                    const id = `radio-${currentQuestion.id}-${opt.value}`;
+                    return (
+                      <div
+                        key={opt.value}
+                        className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-gray-50 cursor-pointer"
+                        onClick={() => setSelectedAnswer(opt.value)}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setSelectedAnswer(opt.value);
+                          }
+                        }}
+                      >
+                        <RadioGroupItem value={opt.value} id={id} onClick={(e) => e.stopPropagation()} />
+                        <Label htmlFor={id} className="cursor-pointer flex-1">
+                          {opt.label}
+                        </Label>
+                      </div>
+                    );
+                  })}
                 </div>
               </RadioGroup>
             ) : (
