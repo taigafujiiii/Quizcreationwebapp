@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Progress } from '../ui/progress';
 import { Checkbox } from '../ui/checkbox';
 import { Label } from '../ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
 import { Badge } from '../ui/badge';
 import { Header } from '../layout/Header';
 import { ExitQuizModal } from '../layout/ExitQuizModal';
@@ -280,22 +280,41 @@ export const Quiz: React.FC = () => {
           <CardContent className="space-y-6">
             <div className="text-lg">{currentQuestion.text}</div>
 
-            {currentQuestion.answerMethod === 'dropdown' ? (
-              <div className="space-y-2">
-                <Label>回答</Label>
-                <Select value={selectedAnswer || undefined} onValueChange={setSelectedAnswer}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="選択してください" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="A">A. {currentQuestion.optionA}</SelectItem>
-                    <SelectItem value="B">B. {currentQuestion.optionB}</SelectItem>
-                    <SelectItem value="C">C. {currentQuestion.optionC}</SelectItem>
-                    <SelectItem value="D">D. {currentQuestion.optionD}</SelectItem>
-                    <SelectItem value="unknown">わからない</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            {currentQuestion.answerMethod === 'radio' ? (
+              <RadioGroup value={selectedAnswer} onValueChange={setSelectedAnswer}>
+                <div className="space-y-3">
+                  <div className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-gray-50 cursor-pointer">
+                    <RadioGroupItem value="A" id="A" />
+                    <Label htmlFor="A" className="cursor-pointer flex-1">
+                      A. {currentQuestion.optionA}
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-gray-50 cursor-pointer">
+                    <RadioGroupItem value="B" id="B" />
+                    <Label htmlFor="B" className="cursor-pointer flex-1">
+                      B. {currentQuestion.optionB}
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-gray-50 cursor-pointer">
+                    <RadioGroupItem value="C" id="C" />
+                    <Label htmlFor="C" className="cursor-pointer flex-1">
+                      C. {currentQuestion.optionC}
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-gray-50 cursor-pointer">
+                    <RadioGroupItem value="D" id="D" />
+                    <Label htmlFor="D" className="cursor-pointer flex-1">
+                      D. {currentQuestion.optionD}
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-gray-50 cursor-pointer">
+                    <RadioGroupItem value="unknown" id="unknown" />
+                    <Label htmlFor="unknown" className="cursor-pointer flex-1">
+                      わからない
+                    </Label>
+                  </div>
+                </div>
+              </RadioGroup>
             ) : (
               <div className="space-y-3">
                 {(

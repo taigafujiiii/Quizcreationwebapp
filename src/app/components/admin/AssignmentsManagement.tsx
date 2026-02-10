@@ -177,13 +177,13 @@ export const AssignmentsManagement: React.FC = () => {
     if (!v) return { ok: true as const, value: 'checkbox' as AnswerMethod };
 
     const normalized = v.toLowerCase().replace(/\s+/g, '').replace(/[_-]/g, '');
-    const dropdown = new Set(['dropdown', 'select', 'pulldown', 'プルダウン']);
+    const radio = new Set(['radio', 'radiobutton', 'ラジオ']);
     const checkbox = new Set(['checkbox', 'check', 'チェックボックス']);
 
-    if (dropdown.has(normalized) || dropdown.has(v)) return { ok: true as const, value: 'dropdown' as AnswerMethod };
+    if (radio.has(normalized) || radio.has(v)) return { ok: true as const, value: 'radio' as AnswerMethod };
     if (checkbox.has(normalized) || checkbox.has(v)) return { ok: true as const, value: 'checkbox' as AnswerMethod };
 
-    return { ok: false as const, error: `行${rowNumber}: 回答方式は dropdown/checkbox または プルダウン/チェックボックス のいずれかにしてください (${v})` };
+    return { ok: false as const, error: `行${rowNumber}: 回答方式は radio/checkbox または ラジオ/チェックボックス のいずれかにしてください (${v})` };
   };
 
   const normalizeCorrectAnswer = (raw: string, answerMethod: AnswerMethod, rowNumber: number) => {
@@ -192,7 +192,7 @@ export const AssignmentsManagement: React.FC = () => {
 
     const validChoices = new Set<Choice>(['A', 'B', 'C', 'D']);
 
-    if (answerMethod === 'dropdown') {
+    if (answerMethod === 'radio') {
       if (!validChoices.has(v as Choice) || v.includes(',')) {
         return { ok: false as const, error: `行${rowNumber}: 正解はA/B/C/Dのいずれか1つにしてください` };
       }
@@ -632,13 +632,13 @@ export const AssignmentsManagement: React.FC = () => {
     if (importFileRef.current) importFileRef.current.value = '';
   };
 
-  const downloadImportTemplate = () => {
-    const rows = [
-      ['単元', 'カテゴリ', '問題文', '選択肢A', '選択肢B', '選択肢C', '選択肢D', '正解', '回答方式', '解説', '公開'],
-      ['（単元名）', '（カテゴリ名）', '2+2は？', '3', '4', '5', '6', 'B', 'checkbox', '2+2=4', '1'],
-    ];
-    const blob = new Blob([toCsv(rows)], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
+    const downloadImportTemplate = () => {
+      const rows = [
+        ['単元', 'カテゴリ', '問題文', '選択肢A', '選択肢B', '選択肢C', '選択肢D', '正解', '回答方式', '解説', '公開'],
+        ['（単元名）', '（カテゴリ名）', '2+2は？', '3', '4', '5', '6', 'B', 'checkbox', '2+2=4', '1'],
+      ];
+      const blob = new Blob([toCsv(rows)], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = 'assignment_questions_template.csv';
@@ -1047,7 +1047,7 @@ export const AssignmentsManagement: React.FC = () => {
                               テンプレートをダウンロード
                             </Button>
                             <div className="text-sm text-gray-600">
-                              必須: 単元, カテゴリ(またはカテゴリID), 問題文, 選択肢A-D, 正解(プルダウンはA/B/C/D、チェックボックスはA,B,Cのようにカンマ区切り) / 任意: 回答方式(空欄はチェックボックス)
+                              必須: 単元, カテゴリ(またはカテゴリID), 問題文, 選択肢A-D, 正解(ラジオはA/B/C/D、チェックボックスはA,B,Cのようにカンマ区切り) / 任意: 回答方式(空欄はチェックボックス)
                             </div>
                           </div>
 
@@ -1278,7 +1278,7 @@ export const AssignmentsManagement: React.FC = () => {
 	                                ...formData,
 	                                answerMethod: value,
 	                                correctAnswer:
-	                                  value === 'dropdown'
+	                                  value === 'radio'
 	                                    ? (parseCorrectAnswerList(formData.correctAnswer)[0] ?? 'A')
 	                                    : (parseCorrectAnswerList(formData.correctAnswer).join(',') || 'A'),
 	                              })
@@ -1288,11 +1288,11 @@ export const AssignmentsManagement: React.FC = () => {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="checkbox">チェックボックス</SelectItem>
-                              <SelectItem value="dropdown">プルダウン</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
+	                              <SelectItem value="checkbox">チェックボックス</SelectItem>
+	                              <SelectItem value="radio">ラジオ</SelectItem>
+	                            </SelectContent>
+	                          </Select>
+	                        </div>
 
                         <div className="space-y-2">
                           <Label>解説</Label>
@@ -1646,7 +1646,7 @@ export const AssignmentsManagement: React.FC = () => {
                     ...formData,
                     answerMethod: value,
                     correctAnswer:
-                      value === 'dropdown'
+                      value === 'radio'
                         ? (parseCorrectAnswerList(formData.correctAnswer)[0] ?? 'A')
                         : (parseCorrectAnswerList(formData.correctAnswer).join(',') || 'A'),
                   })
@@ -1657,7 +1657,7 @@ export const AssignmentsManagement: React.FC = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="checkbox">チェックボックス</SelectItem>
-                  <SelectItem value="dropdown">プルダウン</SelectItem>
+                  <SelectItem value="radio">ラジオ</SelectItem>
                 </SelectContent>
               </Select>
             </div>

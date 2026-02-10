@@ -479,21 +479,21 @@ export const QuestionsManagement: React.FC = () => {
                               ...formData,
                               answerMethod: value,
                               correctAnswer:
-                                value === 'dropdown'
-                                  ? (parseCorrectAnswerList(formData.correctAnswer)[0] ?? 'A')
-                                  : (parseCorrectAnswerList(formData.correctAnswer).join(',') || 'A'),
-                            })
-                          }
-                        >
+                              value === 'radio'
+                                ? (parseCorrectAnswerList(formData.correctAnswer)[0] ?? 'A')
+                                : (parseCorrectAnswerList(formData.correctAnswer).join(',') || 'A'),
+                          })
+                        }
+                      >
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="checkbox">チェックボックス</SelectItem>
-                            <SelectItem value="dropdown">プルダウン</SelectItem>
+                            <SelectItem value="radio">ラジオ</SelectItem>
                           </SelectContent>
-                        </Select>
-                      </div>
+                      </Select>
+                    </div>
 
                       <div className="space-y-2">
                         <Label htmlFor="explanation">解説</Label>
@@ -656,7 +656,7 @@ export const QuestionsManagement: React.FC = () => {
                       </TableCell>
                       <TableCell>{question.correctAnswer}</TableCell>
                       <TableCell>
-                        {question.answerMethod === 'dropdown' ? 'プルダウン' : 'チェックボックス'}
+                        {question.answerMethod === 'radio' ? 'ラジオ' : 'チェックボックス'}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">

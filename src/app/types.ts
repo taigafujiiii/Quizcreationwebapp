@@ -23,7 +23,7 @@ export interface Category {
   unitId: string;
 }
 
-export type AnswerMethod = 'dropdown' | 'checkbox';
+export type AnswerMethod = 'radio' | 'checkbox';
 export type Choice = 'A' | 'B' | 'C' | 'D';
 // correctAnswer / userAnswer are stored as comma-separated values like "A,B" for checkbox answers.
 export type MultiChoiceAnswer = string;
