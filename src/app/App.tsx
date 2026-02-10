@@ -21,8 +21,17 @@ import { Toaster } from './components/ui/sonner';
 
 // 認証が必要なルートのラッパー
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   
+  // Session復元中に /login へ飛ばすと、毎回ログインが必要になる。
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+        <div className="text-gray-500">読み込み中...</div>
+      </div>
+    );
+  }
+
   if (!user) {
     return <Navigate to="/login" replace />;
   }
@@ -32,8 +41,16 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
 // 管理者専用ルートのラッパー
 const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+        <div className="text-gray-500">読み込み中...</div>
+      </div>
+    );
+  }
+
   if (!user) {
     return <Navigate to="/login" replace />;
   }
