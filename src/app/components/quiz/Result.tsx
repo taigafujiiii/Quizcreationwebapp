@@ -16,12 +16,36 @@ export const Result: React.FC = () => {
     answers: QuizAnswer[];
   };
 
+  const normalizeAnswer = (raw: string) => {
+    const v = (raw ?? '').trim().toUpperCase();
+    if (!v) return [] as string[];
+    return Array.from(
+      new Set(
+        v
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .filter((s) => ['A', 'B', 'C', 'D'].includes(s))
+      )
+    ).sort();
+  };
+
+  const isSameAnswer = (a: string, b: string) => {
+    const aa = normalizeAnswer(a);
+    const bb = normalizeAnswer(b);
+    if (aa.length !== bb.length) return false;
+    for (let i = 0; i < aa.length; i++) {
+      if (aa[i] !== bb[i]) return false;
+    }
+    return true;
+  };
+
   // 結果を計算
   const results: QuizResult[] = questions.map((question, index) => {
     const answer = answers[index];
     const isCorrect =
       answer.userAnswer !== 'unknown' &&
-      answer.userAnswer === question.correctAnswer;
+      isSameAnswer(answer.userAnswer, question.correctAnswer);
 
     return {
       questionId: question.id,

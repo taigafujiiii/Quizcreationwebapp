@@ -24,6 +24,9 @@ export interface Category {
 }
 
 export type AnswerMethod = 'dropdown' | 'checkbox';
+export type Choice = 'A' | 'B' | 'C' | 'D';
+// correctAnswer / userAnswer are stored as comma-separated values like "A,B" for checkbox answers.
+export type MultiChoiceAnswer = string;
 
 export interface Question {
   id: string;
@@ -32,7 +35,7 @@ export interface Question {
   optionB: string;
   optionC: string;
   optionD: string;
-  correctAnswer: 'A' | 'B' | 'C' | 'D';
+  correctAnswer: MultiChoiceAnswer;
   answerMethod: AnswerMethod;
   explanation: string;
   categoryId: string;
@@ -42,14 +45,14 @@ export interface Question {
 
 export interface QuizAnswer {
   questionId: string;
-  userAnswer: 'A' | 'B' | 'C' | 'D' | 'unknown';
+  userAnswer: MultiChoiceAnswer | 'unknown';
 }
 
 export interface QuizResult {
   questionId: string;
   questionText: string;
-  userAnswer: 'A' | 'B' | 'C' | 'D' | 'unknown';
-  correctAnswer: 'A' | 'B' | 'C' | 'D';
+  userAnswer: MultiChoiceAnswer | 'unknown';
+  correctAnswer: MultiChoiceAnswer;
   isCorrect: boolean;
   explanation: string;
 }

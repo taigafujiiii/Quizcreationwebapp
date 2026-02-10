@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Badge } from '../ui/badge';
 import { Header } from '../layout/Header';
 import { ExitQuizModal } from '../layout/ExitQuizModal';
-import { Question, QuizAnswer } from '../../types';
+import { Choice, Question, QuizAnswer } from '../../types';
 import { AlertCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
@@ -99,12 +99,46 @@ export const Quiz: React.FC = () => {
   const currentQuestion = questions[currentIndex];
   const progress = questions.length ? ((currentIndex + 1) / questions.length) * 100 : 0;
 
+  const parseAnswerList = (raw: string): Choice[] => {
+    const v = (raw ?? '').trim().toUpperCase();
+    if (!v || v === 'UNKNOWN') return [];
+    const valid = new Set<Choice>(['A', 'B', 'C', 'D']);
+    const parts = v
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const uniq: Choice[] = [];
+    for (const p of parts) {
+      if (!valid.has(p as Choice)) continue;
+      const c = p as Choice;
+      if (!uniq.includes(c)) uniq.push(c);
+    }
+    uniq.sort();
+    return uniq;
+  };
+
+  const toggleChoice = (choice: Choice) => {
+    const current = parseAnswerList(selectedAnswer);
+    const next = current.includes(choice)
+      ? current.filter((c) => c !== choice)
+      : [...current, choice];
+    next.sort();
+    setSelectedAnswer(next.join(','));
+  };
+
   const handleNext = () => {
     if (!selectedAnswer || !currentQuestion) return;
 
+    let userAnswer = selectedAnswer;
+    if (currentQuestion.answerMethod === 'checkbox' && selectedAnswer !== 'unknown') {
+      const normalized = parseAnswerList(selectedAnswer).join(',');
+      if (!normalized) return;
+      userAnswer = normalized;
+    }
+
     const newAnswer: QuizAnswer = {
       questionId: currentQuestion.id,
-      userAnswer: selectedAnswer as QuizAnswer['userAnswer'],
+      userAnswer: userAnswer as QuizAnswer['userAnswer'],
     };
     setAnswers([...answers, newAnswer]);
     setSelectedAnswer('');
@@ -241,25 +275,53 @@ export const Quiz: React.FC = () => {
                   ] as const
                 ).map((opt) => {
                   const id = `answer-${currentQuestion.id}-${opt.value}`;
-                  const checked = selectedAnswer === opt.value;
+                  const checked =
+                    opt.value === 'unknown'
+                      ? selectedAnswer === 'unknown'
+                      : parseAnswerList(selectedAnswer).includes(opt.value);
                   return (
                     <div
                       key={opt.value}
                       className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-gray-50 cursor-pointer"
-                      onClick={() => setSelectedAnswer(checked ? '' : opt.value)}
+                      onClick={() => {
+                        if (opt.value === 'unknown') {
+                          setSelectedAnswer(checked ? '' : 'unknown');
+                          return;
+                        }
+                        if (selectedAnswer === 'unknown') setSelectedAnswer('');
+                        toggleChoice(opt.value);
+                      }}
                       role="button"
                       tabIndex={0}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault();
-                          setSelectedAnswer(checked ? '' : opt.value);
+                          if (opt.value === 'unknown') {
+                            setSelectedAnswer(checked ? '' : 'unknown');
+                            return;
+                          }
+                          if (selectedAnswer === 'unknown') setSelectedAnswer('');
+                          toggleChoice(opt.value);
                         }
                       }}
                     >
                       <Checkbox
                         id={id}
                         checked={checked}
-                        onCheckedChange={(next) => setSelectedAnswer(next ? opt.value : '')}
+                        onCheckedChange={(next) => {
+                          if (opt.value === 'unknown') {
+                            setSelectedAnswer(next ? 'unknown' : '');
+                            return;
+                          }
+                          if (selectedAnswer === 'unknown') setSelectedAnswer('');
+                          if (next) {
+                            toggleChoice(opt.value);
+                          } else {
+                            // ensure off works even if current state is stale
+                            const current = parseAnswerList(selectedAnswer).filter((c) => c !== opt.value);
+                            setSelectedAnswer(current.join(','));
+                          }
+                        }}
                         onClick={(e) => e.stopPropagation()}
                       />
                       <Label htmlFor={id} className="cursor-pointer flex-1">

@@ -13,10 +13,11 @@ import { Badge } from '../ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
 import { ScrollArea, ScrollBar } from '../ui/scroll-area';
+import { Checkbox } from '../ui/checkbox';
 import { Header } from '../layout/Header';
 import { supabase } from '../../lib/supabase';
 import { parseCsv, toCsv } from '../../lib/csv';
-import { AnswerMethod, Question, Category, Unit } from '../../types';
+import { AnswerMethod, Choice, Question, Category, Unit } from '../../types';
 import { ArrowLeft, Plus, Trash2, CheckCircle, Edit, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '../ui/utils';
@@ -118,7 +119,7 @@ export const AssignmentsManagement: React.FC = () => {
       unitName?: string;
       categoryName?: string;
       text: string;
-      correctAnswer: 'A' | 'B' | 'C' | 'D';
+      correctAnswer: string;
       answerMethod: AnswerMethod;
       isActive: boolean;
     }>
@@ -130,7 +131,7 @@ export const AssignmentsManagement: React.FC = () => {
       option_b: string;
       option_c: string;
       option_d: string;
-      correct_answer: 'A' | 'B' | 'C' | 'D';
+      correct_answer: string;
       answer_method: AnswerMethod;
       explanation: string;
       category_id: string;
@@ -153,7 +154,7 @@ export const AssignmentsManagement: React.FC = () => {
     optionB: '',
     optionC: '',
     optionD: '',
-    correctAnswer: 'A' as 'A' | 'B' | 'C' | 'D',
+    correctAnswer: 'A',
     answerMethod: 'checkbox' as AnswerMethod,
     explanation: '',
     unitId: '',
@@ -194,6 +195,67 @@ export const AssignmentsManagement: React.FC = () => {
     if (checkbox.has(normalized) || checkbox.has(v)) return { ok: true as const, value: 'checkbox' as AnswerMethod };
 
     return { ok: false as const, error: `行${rowNumber}: 回答方式は dropdown/checkbox または プルダウン/チェックボックス のいずれかにしてください (${v})` };
+  };
+
+  const normalizeCorrectAnswer = (raw: string, answerMethod: AnswerMethod, rowNumber: number) => {
+    const v = raw.trim().toUpperCase();
+    if (!v) return { ok: false as const, error: `行${rowNumber}: 正解が空です` };
+
+    const validChoices = new Set<Choice>(['A', 'B', 'C', 'D']);
+
+    if (answerMethod === 'dropdown') {
+      if (!validChoices.has(v as Choice) || v.includes(',')) {
+        return { ok: false as const, error: `行${rowNumber}: 正解はA/B/C/Dのいずれか1つにしてください` };
+      }
+      return { ok: true as const, value: v };
+    }
+
+    // checkbox: allow "A,B,C" (comma-separated), normalize to "A,B,C" (sorted, unique, no spaces)
+    const parts = v
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (parts.length === 0) {
+      return { ok: false as const, error: `行${rowNumber}: 正解が空です` };
+    }
+
+    const uniq: Choice[] = [];
+    for (const p of parts) {
+      if (!validChoices.has(p as Choice)) {
+        return { ok: false as const, error: `行${rowNumber}: 正解にはA/B/C/Dのみ使用できます (${p})` };
+      }
+      const c = p as Choice;
+      if (!uniq.includes(c)) uniq.push(c);
+    }
+
+    uniq.sort();
+    return { ok: true as const, value: uniq.join(',') };
+  };
+
+  const parseCorrectAnswerList = (raw: string): Choice[] => {
+    const v = (raw ?? '').trim().toUpperCase();
+    if (!v) return [];
+    const validChoices = new Set<Choice>(['A', 'B', 'C', 'D']);
+    const parts = v
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const uniq: Choice[] = [];
+    for (const p of parts) {
+      if (!validChoices.has(p as Choice)) continue;
+      const c = p as Choice;
+      if (!uniq.includes(c)) uniq.push(c);
+    }
+    uniq.sort();
+    return uniq;
+  };
+
+  const toggleCorrectChoice = (choice: Choice) => {
+    const list = parseCorrectAnswerList(formData.correctAnswer);
+    const next = list.includes(choice) ? list.filter((c) => c !== choice) : [...list, choice];
+    next.sort();
+    setFormData({ ...formData, correctAnswer: next.join(',') });
   };
 
   const resolveUnitId = (unitRaw: string | undefined) => {
@@ -430,6 +492,10 @@ export const AssignmentsManagement: React.FC = () => {
       toast.error('問題文を入力してください');
       return;
     }
+    if (formData.answerMethod === 'checkbox' && parseCorrectAnswerList(formData.correctAnswer).length === 0) {
+      toast.error('チェックボックス回答の場合、正解を1つ以上選択してください');
+      return;
+    }
 
     const { data, error } = await supabase
       .from('questions')
@@ -494,6 +560,10 @@ export const AssignmentsManagement: React.FC = () => {
     }
     if (!formData.text.trim()) {
       toast.error('問題文を入力してください');
+      return;
+    }
+    if (formData.answerMethod === 'checkbox' && parseCorrectAnswerList(formData.correctAnswer).length === 0) {
+      toast.error('チェックボックス回答の場合、正解を1つ以上選択してください');
       return;
     }
 
@@ -712,14 +782,15 @@ export const AssignmentsManagement: React.FC = () => {
         errors.push(`行${rowNumber}: 選択肢A-Dはすべて必須です`);
         continue;
       }
-      if (!['A', 'B', 'C', 'D'].includes(correctRaw)) {
-        errors.push(`行${rowNumber}: 正解はA/B/C/Dのいずれかにしてください`);
-        continue;
-      }
-
       const answerMethodParsed = parseAnswerMethodValue(answerMethodRaw, rowNumber);
       if (!answerMethodParsed.ok) {
         errors.push(answerMethodParsed.error);
+        continue;
+      }
+
+      const correctParsed = normalizeCorrectAnswer(correctRaw, answerMethodParsed.value, rowNumber);
+      if (!correctParsed.ok) {
+        errors.push(correctParsed.error);
         continue;
       }
 
@@ -735,7 +806,7 @@ export const AssignmentsManagement: React.FC = () => {
         option_b: optionB,
         option_c: optionC,
         option_d: optionD,
-        correct_answer: correctRaw as 'A' | 'B' | 'C' | 'D',
+        correct_answer: correctParsed.value,
         answer_method: answerMethodParsed.value,
         explanation,
         category_id: categoryResolved.categoryId,
@@ -749,7 +820,7 @@ export const AssignmentsManagement: React.FC = () => {
           unitName: unitResolved.unitName,
           categoryName: categoryResolved.categoryName,
           text: textRaw,
-          correctAnswer: correctRaw as 'A' | 'B' | 'C' | 'D',
+          correctAnswer: correctParsed.value,
           answerMethod: answerMethodParsed.value,
           isActive: activeParsed.value,
         });
@@ -1003,7 +1074,7 @@ export const AssignmentsManagement: React.FC = () => {
                               テンプレートをダウンロード
                             </Button>
                             <div className="text-sm text-gray-600">
-                              必須: 単元, カテゴリ(またはカテゴリID), 問題文, 選択肢A-D, 正解(A/B/C/D) / 任意: 回答方式(空欄はチェックボックス)
+                              必須: 単元, カテゴリ(またはカテゴリID), 問題文, 選択肢A-D, 正解(プルダウンはA/B/C/D、チェックボックスはA,B,Cのようにカンマ区切り) / 任意: 回答方式(空欄はチェックボックス)
                             </div>
                           </div>
 
@@ -1208,42 +1279,68 @@ export const AssignmentsManagement: React.FC = () => {
                           </div>
                         </div>
 
-                        <div className="space-y-2">
-                          <Label>正解</Label>
-                          <RadioGroup
-                            value={formData.correctAnswer}
-                            onValueChange={(value: 'A' | 'B' | 'C' | 'D') =>
-                              setFormData({ ...formData, correctAnswer: value })
-                            }
-                            className="flex gap-4"
-                          >
-                            <div className="flex items-center space-x-2">
-                              <RadioGroupItem value="A" id="create-correct-a" />
-                              <Label htmlFor="create-correct-a">A</Label>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <RadioGroupItem value="B" id="create-correct-b" />
-                              <Label htmlFor="create-correct-b">B</Label>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <RadioGroupItem value="C" id="create-correct-c" />
-                              <Label htmlFor="create-correct-c">C</Label>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <RadioGroupItem value="D" id="create-correct-d" />
-                              <Label htmlFor="create-correct-d">D</Label>
-                            </div>
-                          </RadioGroup>
-                        </div>
+	                        <div className="space-y-2">
+	                          <Label>正解</Label>
+	                          {formData.answerMethod === 'checkbox' ? (
+	                            <div className="flex flex-wrap gap-4">
+	                              {(['A', 'B', 'C', 'D'] as const).map((c) => {
+	                                const id = `create-correct-${c.toLowerCase()}`;
+	                                const checked = parseCorrectAnswerList(formData.correctAnswer).includes(c);
+	                                return (
+	                                  <Label key={c} htmlFor={id} className="flex items-center gap-2 cursor-pointer">
+	                                    <Checkbox
+	                                      id={id}
+	                                      checked={checked}
+	                                      onCheckedChange={() => toggleCorrectChoice(c)}
+	                                    />
+	                                    {c}
+	                                  </Label>
+	                                );
+	                              })}
+	                            </div>
+	                          ) : (
+	                            <RadioGroup
+	                              value={formData.correctAnswer}
+	                              onValueChange={(value) =>
+	                                setFormData({ ...formData, correctAnswer: value })
+	                              }
+	                              className="flex gap-4"
+	                            >
+	                              <div className="flex items-center space-x-2">
+	                                <RadioGroupItem value="A" id="create-correct-a" />
+	                                <Label htmlFor="create-correct-a">A</Label>
+	                              </div>
+	                              <div className="flex items-center space-x-2">
+	                                <RadioGroupItem value="B" id="create-correct-b" />
+	                                <Label htmlFor="create-correct-b">B</Label>
+	                              </div>
+	                              <div className="flex items-center space-x-2">
+	                                <RadioGroupItem value="C" id="create-correct-c" />
+	                                <Label htmlFor="create-correct-c">C</Label>
+	                              </div>
+	                              <div className="flex items-center space-x-2">
+	                                <RadioGroupItem value="D" id="create-correct-d" />
+	                                <Label htmlFor="create-correct-d">D</Label>
+	                              </div>
+	                            </RadioGroup>
+	                          )}
+	                        </div>
 
                         <div className="space-y-2">
                           <Label>回答方式</Label>
-                          <Select
-                            value={formData.answerMethod}
-                            onValueChange={(value: AnswerMethod) =>
-                              setFormData({ ...formData, answerMethod: value })
-                            }
-                          >
+	                          <Select
+	                            value={formData.answerMethod}
+	                            onValueChange={(value: AnswerMethod) =>
+	                              setFormData({
+	                                ...formData,
+	                                answerMethod: value,
+	                                correctAnswer:
+	                                  value === 'dropdown'
+	                                    ? (parseCorrectAnswerList(formData.correctAnswer)[0] ?? 'A')
+	                                    : (parseCorrectAnswerList(formData.correctAnswer).join(',') || 'A'),
+	                              })
+	                            }
+	                          >
                             <SelectTrigger>
                               <SelectValue />
                             </SelectTrigger>
@@ -1552,30 +1649,49 @@ export const AssignmentsManagement: React.FC = () => {
 
             <div className="space-y-2">
               <Label>正解</Label>
-              <RadioGroup
-                value={formData.correctAnswer}
-                onValueChange={(value: 'A' | 'B' | 'C' | 'D') =>
-                  setFormData({ ...formData, correctAnswer: value })
-                }
-                className="flex gap-4"
-              >
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="A" id="edit-correct-a" />
-                  <Label htmlFor="edit-correct-a">A</Label>
+              {formData.answerMethod === 'checkbox' ? (
+                <div className="flex flex-wrap gap-4">
+                  {(['A', 'B', 'C', 'D'] as const).map((c) => {
+                    const id = `edit-correct-${c.toLowerCase()}`;
+                    const checked = parseCorrectAnswerList(formData.correctAnswer).includes(c);
+                    return (
+                      <Label key={c} htmlFor={id} className="flex items-center gap-2 cursor-pointer">
+                        <Checkbox
+                          id={id}
+                          checked={checked}
+                          onCheckedChange={() => toggleCorrectChoice(c)}
+                        />
+                        {c}
+                      </Label>
+                    );
+                  })}
                 </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="B" id="edit-correct-b" />
-                  <Label htmlFor="edit-correct-b">B</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="C" id="edit-correct-c" />
-                  <Label htmlFor="edit-correct-c">C</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="D" id="edit-correct-d" />
-                  <Label htmlFor="edit-correct-d">D</Label>
-                </div>
-              </RadioGroup>
+              ) : (
+                <RadioGroup
+                  value={formData.correctAnswer}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, correctAnswer: value })
+                  }
+                  className="flex gap-4"
+                >
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="A" id="edit-correct-a" />
+                    <Label htmlFor="edit-correct-a">A</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="B" id="edit-correct-b" />
+                    <Label htmlFor="edit-correct-b">B</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="C" id="edit-correct-c" />
+                    <Label htmlFor="edit-correct-c">C</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="D" id="edit-correct-d" />
+                    <Label htmlFor="edit-correct-d">D</Label>
+                  </div>
+                </RadioGroup>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -1583,7 +1699,14 @@ export const AssignmentsManagement: React.FC = () => {
               <Select
                 value={formData.answerMethod}
                 onValueChange={(value: AnswerMethod) =>
-                  setFormData({ ...formData, answerMethod: value })
+                  setFormData({
+                    ...formData,
+                    answerMethod: value,
+                    correctAnswer:
+                      value === 'dropdown'
+                        ? (parseCorrectAnswerList(formData.correctAnswer)[0] ?? 'A')
+                        : (parseCorrectAnswerList(formData.correctAnswer).join(',') || 'A'),
+                  })
                 }
               >
                 <SelectTrigger>

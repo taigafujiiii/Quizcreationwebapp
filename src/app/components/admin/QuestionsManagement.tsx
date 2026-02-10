@@ -10,8 +10,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import { Badge } from '../ui/badge';
+import { Checkbox } from '../ui/checkbox';
 import { Header } from '../layout/Header';
-import { AnswerMethod, Question, Category } from '../../types';
+import { AnswerMethod, Choice, Question, Category } from '../../types';
 import { ArrowLeft, Plus, Edit, Trash2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
@@ -28,13 +29,38 @@ export const QuestionsManagement: React.FC = () => {
     optionB: '',
     optionC: '',
     optionD: '',
-    correctAnswer: 'A' as 'A' | 'B' | 'C' | 'D',
+    correctAnswer: 'A',
     answerMethod: 'checkbox' as AnswerMethod,
     explanation: '',
     categoryId: '',
     isActive: true,
   });
   const [loading, setLoading] = useState(true);
+
+  const parseCorrectAnswerList = (raw: string): Choice[] => {
+    const v = (raw ?? '').trim().toUpperCase();
+    if (!v) return [];
+    const validChoices = new Set<Choice>(['A', 'B', 'C', 'D']);
+    const parts = v
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const uniq: Choice[] = [];
+    for (const p of parts) {
+      if (!validChoices.has(p as Choice)) continue;
+      const c = p as Choice;
+      if (!uniq.includes(c)) uniq.push(c);
+    }
+    uniq.sort();
+    return uniq;
+  };
+
+  const toggleCorrectChoice = (choice: Choice) => {
+    const list = parseCorrectAnswerList(formData.correctAnswer);
+    const next = list.includes(choice) ? list.filter((c) => c !== choice) : [...list, choice];
+    next.sort();
+    setFormData({ ...formData, correctAnswer: next.join(',') });
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -68,6 +94,10 @@ export const QuestionsManagement: React.FC = () => {
   const handleSubmit = async () => {
     if (!formData.categoryId || !formData.text.trim()) {
       toast.error('カテゴリと問題文を入力してください');
+      return;
+    }
+    if (formData.answerMethod === 'checkbox' && parseCorrectAnswerList(formData.correctAnswer).length === 0) {
+      toast.error('チェックボックス回答の場合、正解を1つ以上選択してください');
       return;
     }
 
@@ -312,22 +342,41 @@ export const QuestionsManagement: React.FC = () => {
 
                     <div className="space-y-2">
                       <Label htmlFor="correct">正解</Label>
-                      <Select
-                        value={formData.correctAnswer}
-                        onValueChange={(value: 'A' | 'B' | 'C' | 'D') =>
-                          setFormData({ ...formData, correctAnswer: value })
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="A">A</SelectItem>
-                          <SelectItem value="B">B</SelectItem>
-                          <SelectItem value="C">C</SelectItem>
-                          <SelectItem value="D">D</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      {formData.answerMethod === 'checkbox' ? (
+                        <div className="flex flex-wrap gap-4">
+                          {(['A', 'B', 'C', 'D'] as const).map((c) => {
+                            const id = `correct-${c.toLowerCase()}`;
+                            const checked = parseCorrectAnswerList(formData.correctAnswer).includes(c);
+                            return (
+                              <Label key={c} htmlFor={id} className="flex items-center gap-2 cursor-pointer">
+                                <Checkbox
+                                  id={id}
+                                  checked={checked}
+                                  onCheckedChange={() => toggleCorrectChoice(c)}
+                                />
+                                {c}
+                              </Label>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <Select
+                          value={formData.correctAnswer}
+                          onValueChange={(value) =>
+                            setFormData({ ...formData, correctAnswer: value })
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="A">A</SelectItem>
+                            <SelectItem value="B">B</SelectItem>
+                            <SelectItem value="C">C</SelectItem>
+                            <SelectItem value="D">D</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
                     </div>
 
                     <div className="space-y-2">
@@ -335,7 +384,14 @@ export const QuestionsManagement: React.FC = () => {
                       <Select
                         value={formData.answerMethod}
                         onValueChange={(value: AnswerMethod) =>
-                          setFormData({ ...formData, answerMethod: value })
+                          setFormData({
+                            ...formData,
+                            answerMethod: value,
+                            correctAnswer:
+                              value === 'dropdown'
+                                ? (parseCorrectAnswerList(formData.correctAnswer)[0] ?? 'A')
+                                : (parseCorrectAnswerList(formData.correctAnswer).join(',') || 'A'),
+                          })
                         }
                       >
                         <SelectTrigger>
