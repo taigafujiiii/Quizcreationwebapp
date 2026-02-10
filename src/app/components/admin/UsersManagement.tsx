@@ -728,53 +728,60 @@ export const UsersManagement: React.FC = () => {
             {userToEdit?.role === 'user' && (
               <div className="space-y-3">
                 <Label>学習可能単元</Label>
-                <p className="text-xs text-gray-500">
-                  このユーザーが学習できる単元を選択してください
-                </p>
+	                <p className="text-xs text-gray-500">
+	                  このユーザーが学習できる単元を選択してください
+	                </p>
 
-                {/* 選択済み単元チップ */}
-                {editAllowedUnits.length > 0 && (
-                  <div className="flex flex-wrap gap-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                    {editAllowedUnits.map((unitId) => (
-                      <Badge
-                        key={unitId}
-                        className="bg-blue-600 text-white hover:bg-blue-700 px-3 py-1 flex items-center gap-1"
-                      >
-                        {getUnitName(unitId)}
-                        <button
-                          onClick={() => handleRemoveEditUnit(unitId)}
-                          className="ml-1 hover:bg-blue-800 rounded-full p-0.5"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </Badge>
-                    ))}
-                  </div>
-                )}
+	                {/* 単元検索 */}
+	                <div className="relative">
+	                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+	                  <Input
+	                    placeholder="単元を検索..."
+	                    value={unitSearchQuery}
+	                    onChange={(e) => setUnitSearchQuery(e.target.value)}
+	                    className="pl-10"
+	                  />
+	                </div>
 
-                {editAllowedUnits.length === 0 && (
-                  <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                    <p className="text-sm text-yellow-800">
-                      <AlertTriangle className="inline h-4 w-4 mr-1" />
-                      学習単元が未設定です。ユーザーは問題を学習できません。
-                    </p>
-                  </div>
-                )}
+	                {/* 選択済み単元一覧（検索欄の下に表示） */}
+	                {editAllowedUnits.length > 0 ? (
+	                  <div className="border rounded-lg overflow-hidden">
+	                    <div className="px-3 py-2 bg-blue-50 border-b border-blue-200 text-xs text-blue-700 font-medium">
+	                      選択済み
+	                    </div>
+	                    <div className="max-h-32 overflow-y-auto">
+	                      {editAllowedUnits.map((unitId) => (
+	                        <div
+	                          key={unitId}
+	                          className="flex items-center justify-between gap-2 px-3 py-2 border-b last:border-b-0"
+	                        >
+	                          <div className="text-sm text-gray-800 truncate">
+	                            {getUnitName(unitId)}
+	                          </div>
+	                          <Button
+	                            variant="outline"
+	                            size="sm"
+	                            onClick={() => handleRemoveEditUnit(unitId)}
+	                            className="h-8 px-2"
+	                          >
+	                            <X className="h-4 w-4" />
+	                          </Button>
+	                        </div>
+	                      ))}
+	                    </div>
+	                  </div>
+	                ) : (
+	                  <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+	                    <p className="text-sm text-yellow-800">
+	                      <AlertTriangle className="inline h-4 w-4 mr-1" />
+	                      学習単元が未設定です。ユーザーは問題を学習できません。
+	                    </p>
+	                  </div>
+	                )}
 
-                {/* 単元検索 */}
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <Input
-                    placeholder="単元を検索..."
-                    value={unitSearchQuery}
-                    onChange={(e) => setUnitSearchQuery(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-
-                {/* 単元リスト（チェックボックス） */}
-                <div className="border rounded-lg max-h-64 overflow-y-auto">
-                  {filteredUnits.map((unit) => (
+	                {/* 単元リスト（チェックボックス） */}
+	                <div className="border rounded-lg max-h-64 overflow-y-auto">
+	                  {filteredUnits.map((unit) => (
                     <div
                       key={unit.id}
                       className="flex items-start gap-3 p-3 hover:bg-gray-50 border-b last:border-b-0 cursor-pointer"
@@ -936,53 +943,60 @@ export const UsersManagement: React.FC = () => {
             {inviteRole === 'user' && (
               <div className="space-y-3">
                 <Label>学習可能単元</Label>
-                <p className="text-xs text-gray-500">
-                  このユーザーが学習できる単元を選択してください
-                </p>
+	                <p className="text-xs text-gray-500">
+	                  このユーザーが学習できる単元を選択してください
+	                </p>
 
-                {/* 選択済み単元チップ */}
-                {inviteAllowedUnits.length > 0 && (
-                  <div className="flex flex-wrap gap-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                    {inviteAllowedUnits.map((unitId) => (
-                      <Badge
-                        key={unitId}
-                        className="bg-blue-600 text-white hover:bg-blue-700 px-3 py-1 flex items-center gap-1"
-                      >
-                        {getUnitName(unitId)}
-                        <button
-                          onClick={() => handleRemoveInviteUnit(unitId)}
-                          className="ml-1 hover:bg-blue-800 rounded-full p-0.5"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </Badge>
-                    ))}
-                  </div>
-                )}
+	                {/* 単元検索 */}
+	                <div className="relative">
+	                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+	                  <Input
+	                    placeholder="単元を検索..."
+	                    value={inviteUnitSearchQuery}
+	                    onChange={(e) => setInviteUnitSearchQuery(e.target.value)}
+	                    className="pl-10"
+	                  />
+	                </div>
 
-                {inviteAllowedUnits.length === 0 && (
-                  <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                    <p className="text-sm text-yellow-800">
-                      <AlertTriangle className="inline h-4 w-4 mr-1" />
-                      学習単元が未設定です。ユーザーは問題を学習できません。
-                    </p>
-                  </div>
-                )}
+	                {/* 選択済み単元一覧（検索欄の下に表示） */}
+	                {inviteAllowedUnits.length > 0 ? (
+	                  <div className="border rounded-lg overflow-hidden">
+	                    <div className="px-3 py-2 bg-blue-50 border-b border-blue-200 text-xs text-blue-700 font-medium">
+	                      選択済み
+	                    </div>
+	                    <div className="max-h-32 overflow-y-auto">
+	                      {inviteAllowedUnits.map((unitId) => (
+	                        <div
+	                          key={unitId}
+	                          className="flex items-center justify-between gap-2 px-3 py-2 border-b last:border-b-0"
+	                        >
+	                          <div className="text-sm text-gray-800 truncate">
+	                            {getUnitName(unitId)}
+	                          </div>
+	                          <Button
+	                            variant="outline"
+	                            size="sm"
+	                            onClick={() => handleRemoveInviteUnit(unitId)}
+	                            className="h-8 px-2"
+	                          >
+	                            <X className="h-4 w-4" />
+	                          </Button>
+	                        </div>
+	                      ))}
+	                    </div>
+	                  </div>
+	                ) : (
+	                  <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+	                    <p className="text-sm text-yellow-800">
+	                      <AlertTriangle className="inline h-4 w-4 mr-1" />
+	                      学習単元が未設定です。ユーザーは問題を学習できません。
+	                    </p>
+	                  </div>
+	                )}
 
-                {/* 単元検索 */}
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <Input
-                    placeholder="単元を検索..."
-                    value={inviteUnitSearchQuery}
-                    onChange={(e) => setInviteUnitSearchQuery(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-
-                {/* 単元リスト（チェックボックス） */}
-                <div className="border rounded-lg max-h-64 overflow-y-auto">
-                  {filteredInviteUnits.map((unit) => (
+	                {/* 単元リスト（チェックボックス） */}
+	                <div className="border rounded-lg max-h-64 overflow-y-auto">
+	                  {filteredInviteUnits.map((unit) => (
                     <div
                       key={unit.id}
                       className="flex items-start gap-3 p-3 hover:bg-gray-50 border-b last:border-b-0 cursor-pointer"
