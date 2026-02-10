@@ -25,7 +25,7 @@ export const UnitsManagement: React.FC = () => {
     setLoading(true);
     const { data, error } = await supabase
       .from('units')
-      .select('id, name, description')
+      .select('id, name, description, updatedAt:updated_at')
       .order('created_at', { ascending: true });
 
     if (error) {
@@ -49,13 +49,27 @@ export const UnitsManagement: React.FC = () => {
     }
 
     if (editingUnit) {
-      const { error } = await supabase
+      if (!editingUnit.updatedAt) {
+        toast.error('データが古い可能性があります。再読み込みしてください');
+        await loadUnits();
+        return;
+      }
+
+      const { data, error } = await supabase
         .from('units')
         .update({ name: formData.name.trim(), description: formData.description.trim() })
-        .eq('id', editingUnit.id);
+        .eq('id', editingUnit.id)
+        .eq('updated_at', editingUnit.updatedAt)
+        .select('updatedAt:updated_at')
+        .maybeSingle();
 
       if (error) {
         toast.error('単元の更新に失敗しました');
+        return;
+      }
+      if (!data) {
+        toast.error('他のユーザーが先に更新しました。最新の状態を読み込みます');
+        await loadUnits();
         return;
       }
       toast.success('単元を更新しました');

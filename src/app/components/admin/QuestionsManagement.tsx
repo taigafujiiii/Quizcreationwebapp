@@ -76,7 +76,7 @@ export const QuestionsManagement: React.FC = () => {
     const { data: questionData, error: questionError } = await supabase
       .from('questions')
       .select(
-        'id, text, optionA:option_a, optionB:option_b, optionC:option_c, optionD:option_d, correctAnswer:correct_answer, answerMethod:answer_method, explanation, categoryId:category_id, isActive:is_active, isAssignment:is_assignment'
+        'id, text, optionA:option_a, optionB:option_b, optionC:option_c, optionD:option_d, correctAnswer:correct_answer, answerMethod:answer_method, explanation, categoryId:category_id, isActive:is_active, isAssignment:is_assignment, updatedAt:updated_at'
       )
       .order('created_at', { ascending: false });
 
@@ -117,7 +117,13 @@ export const QuestionsManagement: React.FC = () => {
     }
 
     if (editingQuestion) {
-      const { error } = await supabase
+      if (!editingQuestion.updatedAt) {
+        toast.error('データが古い可能性があります。再読み込みしてください');
+        await loadData();
+        return;
+      }
+
+      const { data, error } = await supabase
         .from('questions')
         .update({
           text: formData.text,
@@ -131,10 +137,18 @@ export const QuestionsManagement: React.FC = () => {
           category_id: formData.categoryId,
           is_active: formData.isActive,
         })
-        .eq('id', editingQuestion.id);
+        .eq('id', editingQuestion.id)
+        .eq('updated_at', editingQuestion.updatedAt)
+        .select('updatedAt:updated_at')
+        .maybeSingle();
 
       if (error) {
         toast.error('問題の更新に失敗しました');
+        return;
+      }
+      if (!data) {
+        toast.error('他のユーザーが先に更新しました。最新の状態を読み込みます');
+        await loadData();
         return;
       }
       toast.success('問題を更新しました');
@@ -219,19 +233,35 @@ export const QuestionsManagement: React.FC = () => {
     setIsDialogOpen(true);
   };
 
-  const toggleActive = async (id: string, current: boolean) => {
-    const { error } = await supabase
+  const toggleActive = async (id: string, next: boolean) => {
+    const target = questions.find((q) => q.id === id);
+    if (!target?.updatedAt) {
+      toast.error('データが古い可能性があります。再読み込みしてください');
+      await loadData();
+      return;
+    }
+
+    const { data, error } = await supabase
       .from('questions')
-      .update({ is_active: !current })
-      .eq('id', id);
+      .update({ is_active: next })
+      .eq('id', id)
+      .eq('updated_at', target.updatedAt)
+      .select('updatedAt:updated_at')
+      .maybeSingle();
 
     if (error) {
       toast.error('状態の更新に失敗しました');
       return;
     }
+    if (!data) {
+      toast.error('他のユーザーが先に更新しました。最新の状態を読み込みます');
+      await loadData();
+      return;
+    }
+
     setQuestions(
       questions.map((q) =>
-        q.id === id ? { ...q, isActive: !current } : q
+        q.id === id ? { ...q, isActive: next, updatedAt: (data as any).updatedAt ?? q.updatedAt } : q
       )
     );
   };
@@ -662,7 +692,7 @@ export const QuestionsManagement: React.FC = () => {
                         <div className="flex items-center gap-2">
                           <Switch
                             checked={question.isActive}
-                            onCheckedChange={() => toggleActive(question.id, question.isActive)}
+                            onCheckedChange={(checked) => void toggleActive(question.id, checked)}
                           />
                           <span className="text-sm">
                             {question.isActive ? '公開中' : '非公開'}

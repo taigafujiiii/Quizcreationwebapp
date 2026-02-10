@@ -6,6 +6,7 @@ export interface User {
   verified: boolean;
   isActive?: boolean; // 削除済みフラグ（false = 削除済み）
   createdAt?: string; // 登録日時
+  updatedAt?: string; // 更新日時（同時編集の競合検知に使用）
   username?: string; // ユーザー名
   allowedUnitIds?: string[]; // 学習可能な単元ID（USERのみ、ADMINは常に全単元）
 }
@@ -14,6 +15,7 @@ export interface Unit {
   id: string;
   name: string;
   description: string;
+  updatedAt?: string; // 更新日時（同時編集の競合検知に使用）
 }
 
 export interface Category {
@@ -21,6 +23,7 @@ export interface Category {
   name: string;
   description: string;
   unitId: string;
+  updatedAt?: string; // 更新日時（同時編集の競合検知に使用）
 }
 
 export type AnswerMethod = 'radio' | 'checkbox';
@@ -41,6 +44,7 @@ export interface Question {
   categoryId: string;
   isActive: boolean;
   isAssignment?: boolean; // 課題フラグ
+  updatedAt?: string; // 更新日時（同時編集の競合検知に使用）
 }
 
 export interface QuizAnswer {

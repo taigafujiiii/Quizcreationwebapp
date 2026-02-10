@@ -72,7 +72,7 @@ export const CategoriesManagement: React.FC = () => {
 
     const { data: categoryData, error: categoryError } = await supabase
       .from('categories')
-      .select('id, name, description, unitId:unit_id')
+      .select('id, name, description, unitId:unit_id, updatedAt:updated_at')
       .order('created_at', { ascending: true });
 
     if (unitError || categoryError) {
@@ -97,17 +97,31 @@ export const CategoriesManagement: React.FC = () => {
     }
 
     if (editingCategory) {
-      const { error } = await supabase
+      if (!editingCategory.updatedAt) {
+        toast.error('データが古い可能性があります。再読み込みしてください');
+        await loadData();
+        return;
+      }
+
+      const { data, error } = await supabase
         .from('categories')
         .update({
           name: formData.name.trim(),
           description: formData.description.trim(),
           unit_id: formData.unitId,
         })
-        .eq('id', editingCategory.id);
+        .eq('id', editingCategory.id)
+        .eq('updated_at', editingCategory.updatedAt)
+        .select('updatedAt:updated_at')
+        .maybeSingle();
 
       if (error) {
         toast.error('カテゴリを更新できませんでした');
+        return;
+      }
+      if (!data) {
+        toast.error('他のユーザーが先に更新しました。最新の状態を読み込みます');
+        await loadData();
         return;
       }
       toast.success('カテゴリを更新しました');

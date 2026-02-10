@@ -248,9 +248,10 @@ export const UsersManagement: React.FC = () => {
     }
 
     try {
-      await adminApi.updateUser(userToEdit.id, {
+      const res = await adminApi.updateUser(userToEdit.id, {
         username: editUsername.trim(),
         allowedUnitIds: userToEdit.role === 'user' ? editAllowedUnits : [],
+        updatedAt: userToEdit.updatedAt,
       });
 
       setUsers(
@@ -260,6 +261,7 @@ export const UsersManagement: React.FC = () => {
                 ...u,
                 username: editUsername.trim(),
                 allowedUnitIds: userToEdit.role === 'user' ? editAllowedUnits : undefined,
+                updatedAt: res.updatedAt ?? u.updatedAt,
               }
             : u
         )
@@ -267,7 +269,8 @@ export const UsersManagement: React.FC = () => {
 
       toast.success('保存しました');
     } catch (_error) {
-      toast.error('保存に失敗しました');
+      toast.error('保存に失敗しました（他のユーザーが先に更新した可能性があります）');
+      await loadUsers();
       return;
     }
 

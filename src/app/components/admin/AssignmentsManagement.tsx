@@ -299,18 +299,18 @@ export const AssignmentsManagement: React.FC = () => {
     setLoading(true);
     const { data: unitData, error: unitError } = await supabase
       .from('units')
-      .select('id, name, description')
+      .select('id, name, description, updatedAt:updated_at')
       .order('created_at', { ascending: true });
 
     const { data: categoryData, error: categoryError } = await supabase
       .from('categories')
-      .select('id, name, description, unitId:unit_id')
+      .select('id, name, description, unitId:unit_id, updatedAt:updated_at')
       .order('created_at', { ascending: true });
 
     const { data: questionData, error: questionError } = await supabase
       .from('questions')
       .select(
-        'id, text, optionA:option_a, optionB:option_b, optionC:option_c, optionD:option_d, correctAnswer:correct_answer, answerMethod:answer_method, explanation, categoryId:category_id, isActive:is_active, isAssignment:is_assignment'
+        'id, text, optionA:option_a, optionB:option_b, optionC:option_c, optionD:option_d, correctAnswer:correct_answer, answerMethod:answer_method, explanation, categoryId:category_id, isActive:is_active, isAssignment:is_assignment, updatedAt:updated_at'
       )
       .order('created_at', { ascending: false });
 
@@ -435,18 +435,33 @@ export const AssignmentsManagement: React.FC = () => {
   };
 
   const handleAddToAssignment = async (questionId: string) => {
-    const { error } = await supabase
+    const target = questions.find((q) => q.id === questionId);
+    if (!target?.updatedAt) {
+      toast.error('データが古い可能性があります。再読み込みしてください');
+      await loadData();
+      return;
+    }
+
+    const { data, error } = await supabase
       .from('questions')
       .update({ is_assignment: true })
-      .eq('id', questionId);
+      .eq('id', questionId)
+      .eq('updated_at', target.updatedAt)
+      .select('updatedAt:updated_at')
+      .maybeSingle();
     if (error) {
       toast.error('課題への追加に失敗しました');
+      return;
+    }
+    if (!data) {
+      toast.error('他のユーザーが先に更新しました。最新の状態を読み込みます');
+      await loadData();
       return;
     }
 
     setQuestions(
       questions.map((q) =>
-        q.id === questionId ? { ...q, isAssignment: true } : q
+        q.id === questionId ? { ...q, isAssignment: true, updatedAt: (data as any).updatedAt ?? q.updatedAt } : q
       )
     );
     toast.success('問題を課題に追加しました');
@@ -454,18 +469,33 @@ export const AssignmentsManagement: React.FC = () => {
 
   const handleRemoveFromAssignment = async (questionId: string) => {
     if (confirm('この問題を課題から外しますか？')) {
-      const { error } = await supabase
+      const target = questions.find((q) => q.id === questionId);
+      if (!target?.updatedAt) {
+        toast.error('データが古い可能性があります。再読み込みしてください');
+        await loadData();
+        return;
+      }
+
+      const { data, error } = await supabase
         .from('questions')
         .update({ is_assignment: false })
-        .eq('id', questionId);
+        .eq('id', questionId)
+        .eq('updated_at', target.updatedAt)
+        .select('updatedAt:updated_at')
+        .maybeSingle();
       if (error) {
         toast.error('課題から外せませんでした');
+        return;
+      }
+      if (!data) {
+        toast.error('他のユーザーが先に更新しました。最新の状態を読み込みます');
+        await loadData();
         return;
       }
 
       setQuestions(
         questions.map((q) =>
-          q.id === questionId ? { ...q, isAssignment: false } : q
+          q.id === questionId ? { ...q, isAssignment: false, updatedAt: (data as any).updatedAt ?? q.updatedAt } : q
         )
       );
       toast.success('問題を課題から外しました');
@@ -542,6 +572,12 @@ export const AssignmentsManagement: React.FC = () => {
 
   const handleSaveEdit = async () => {
     if (!editingQuestion) return;
+
+    if (!editingQuestion.updatedAt) {
+      toast.error('データが古い可能性があります。再読み込みしてください');
+      await loadData();
+      return;
+    }
     
     if (!formData.categoryId) {
       toast.error('カテゴリを選択してください');
@@ -556,7 +592,7 @@ export const AssignmentsManagement: React.FC = () => {
       return;
     }
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('questions')
       .update({
         text: formData.text,
@@ -570,10 +606,18 @@ export const AssignmentsManagement: React.FC = () => {
         category_id: formData.categoryId,
         is_active: formData.isActive,
       })
-      .eq('id', editingQuestion.id);
+      .eq('id', editingQuestion.id)
+      .eq('updated_at', editingQuestion.updatedAt)
+      .select('updatedAt:updated_at')
+      .maybeSingle();
 
     if (error) {
       toast.error('問題を更新できませんでした');
+      return;
+    }
+    if (!data) {
+      toast.error('他のユーザーが先に更新しました。最新の状態を読み込みます');
+      await loadData();
       return;
     }
 
@@ -589,6 +633,7 @@ export const AssignmentsManagement: React.FC = () => {
       explanation: formData.explanation,
       categoryId: formData.categoryId,
       isActive: formData.isActive,
+      updatedAt: (data as any).updatedAt ?? editingQuestion.updatedAt,
     };
 
     setQuestions(

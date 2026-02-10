@@ -52,8 +52,9 @@ export const adminApi = {
     username?: string;
     allowedUnitIds?: string[];
     role?: 'user' | 'admin';
+    updatedAt?: string;
   }) => {
-    return adminFetch<{ success: true }>(
+    return adminFetch<{ success: true; updatedAt?: string | null }>(
       `/admin/users/${userId}`,
       { method: 'PATCH', body: JSON.stringify(payload) }
     );

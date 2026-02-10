@@ -137,7 +137,7 @@ app.get('/admin/users', requireAdmin, async (c) => {
 
   const { data: profiles, error: profileError } = await adminClient
     .from('profiles')
-    .select('id, role, username, allowed_unit_ids, is_active')
+    .select('id, role, username, allowed_unit_ids, is_active, updated_at')
     .in('id', userIds.length ? userIds : ['00000000-0000-0000-0000-000000000000']);
 
   if (profileError) {
@@ -155,6 +155,7 @@ app.get('/admin/users', requireAdmin, async (c) => {
       verified: Boolean(u.email_confirmed_at),
       isActive: profile?.is_active ?? true,
       createdAt: u.created_at,
+      updatedAt: profile?.updated_at ?? undefined,
       username: profile?.username || undefined,
       allowedUnitIds: profile?.allowed_unit_ids || [],
     };
@@ -314,6 +315,7 @@ app.patch('/admin/users/:id', requireAdmin, async (c) => {
   const role = normalizeRole(body?.role);
   const username = normalizeUsername(body?.username);
   const allowedUnitIds = normalizeAllowedUnitIds(body?.allowedUnitIds);
+  const prevUpdatedAt = typeof body?.updatedAt === "string" ? body.updatedAt : null;
 
   if (body?.role !== undefined && role === null) {
     return c.json({ error: 'Invalid role' }, 400);
@@ -344,16 +346,28 @@ app.patch('/admin/users/:id', requireAdmin, async (c) => {
     return c.json({ error: 'No updates provided' }, 400);
   }
 
-  const { error } = await adminClient
+  let q = adminClient
     .from('profiles')
     .update(updates)
     .eq('id', userId);
+
+  if (prevUpdatedAt) {
+    q = q.eq('updated_at', prevUpdatedAt);
+  }
+
+  const { data, error } = await q
+    .select('updatedAt:updated_at')
+    .maybeSingle();
 
   if (error) {
     return c.json({ error: error.message }, 500);
   }
 
-  return c.json({ success: true });
+  if (prevUpdatedAt && !data) {
+    return c.json({ error: 'Conflict: already updated by another user' }, 409);
+  }
+
+  return c.json({ success: true, updatedAt: (data as any)?.updatedAt ?? null });
 });
 
 app.post('/admin/users/:id/deactivate', requireAdmin, async (c) => {
