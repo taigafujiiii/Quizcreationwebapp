@@ -7,10 +7,19 @@ const app = new Hono();
 
 app.use('*', logger(console.log));
 
+const parseCorsOrigins = (raw: string) =>
+  raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+const corsOrigins = parseCorsOrigins(Deno.env.get("CORS_ORIGINS") || "");
+const corsOrigin = corsOrigins.length ? corsOrigins : "*";
+
 app.use(
   "/*",
   cors({
-    origin: "*",
+    origin: corsOrigin,
     allowHeaders: ["Content-Type", "Authorization", "apikey", "x-client-info"],
     allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     exposeHeaders: ["Content-Length"],
@@ -39,6 +48,41 @@ const normalizeInviteRedirectUrl = (raw: string) => {
 const inviteRedirectUrl = normalizeInviteRedirectUrl(inviteRedirectUrlRaw);
 
 const adminClient = createClient(supabaseUrl, supabaseServiceKey);
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const isUuid = (v: unknown): v is string => typeof v === "string" && UUID_RE.test(v);
+
+const normalizeRole = (v: unknown): "user" | "admin" | null => {
+  if (v === undefined || v === null) return null;
+  if (typeof v !== "string") return null;
+  const role = v.trim().toLowerCase();
+  if (role === "user" || role === "admin") return role;
+  return null;
+};
+
+const normalizeUsername = (v: unknown): string | null => {
+  if (v === undefined || v === null) return null;
+  if (typeof v !== "string") return null;
+  const name = v.trim();
+  if (!name) return "";
+  if (name.length > 50) return null;
+  return name;
+};
+
+const normalizeAllowedUnitIds = (v: unknown): string[] | null => {
+  if (v === undefined || v === null) return null;
+  if (!Array.isArray(v)) return null;
+  const uniq: string[] = [];
+  for (const raw of v) {
+    if (!isUuid(raw)) return null;
+    if (!uniq.includes(raw)) uniq.push(raw);
+  }
+  // Guardrail against accidental huge payloads.
+  if (uniq.length > 500) return null;
+  return uniq;
+};
 
 const requireAdmin = async (c: any, next: () => Promise<void>) => {
   const authHeader = c.req.header('Authorization');
@@ -123,8 +167,8 @@ app.post('/admin/invite', requireAdmin, async (c) => {
   const authUser = c.get('authUser') as { id: string } | undefined;
   const body = await c.req.json();
   const emailRaw = body?.email as string | undefined;
-  const role = (body?.role as 'user' | 'admin') || 'user';
-  const allowedUnitIds = (body?.allowedUnitIds as string[]) || [];
+  const role = normalizeRole(body?.role) ?? 'user';
+  const allowedUnitIds = normalizeAllowedUnitIds(body?.allowedUnitIds) ?? [];
 
   if (!authUser?.id) {
     return c.json({ error: 'Unauthorized' }, 401);
@@ -259,13 +303,42 @@ app.post('/admin/invite', requireAdmin, async (c) => {
 });
 
 app.patch('/admin/users/:id', requireAdmin, async (c) => {
+  const authUser = c.get('authUser') as { id: string } | undefined;
   const userId = c.req.param('id');
   const body = await c.req.json();
 
+  if (!isUuid(userId)) {
+    return c.json({ error: 'Invalid user id' }, 400);
+  }
+
+  const role = normalizeRole(body?.role);
+  const username = normalizeUsername(body?.username);
+  const allowedUnitIds = normalizeAllowedUnitIds(body?.allowedUnitIds);
+
+  if (body?.role !== undefined && role === null) {
+    return c.json({ error: 'Invalid role' }, 400);
+  }
+  if (body?.username !== undefined && username === null) {
+    return c.json({ error: 'Invalid username' }, 400);
+  }
+  if (body?.allowedUnitIds !== undefined && allowedUnitIds === null) {
+    return c.json({ error: 'Invalid allowedUnitIds' }, 400);
+  }
+
+  // Avoid accidental lock-out by self-demotion in the UI.
+  if (authUser?.id && authUser.id === userId && role === 'user') {
+    return c.json({ error: 'You cannot change your own role' }, 400);
+  }
+
   const updates: Record<string, unknown> = {};
-  if (body.username !== undefined) updates.username = body.username;
-  if (body.allowedUnitIds !== undefined) updates.allowed_unit_ids = body.allowedUnitIds;
-  if (body.role !== undefined) updates.role = body.role;
+  if (username !== null) updates.username = username;
+  if (allowedUnitIds !== null) updates.allowed_unit_ids = allowedUnitIds;
+  if (role !== null) updates.role = role;
+
+  // If promoting to admin, clear allowed units to avoid confusion.
+  if (role === 'admin') {
+    updates.allowed_unit_ids = [];
+  }
 
   if (Object.keys(updates).length === 0) {
     return c.json({ error: 'No updates provided' }, 400);
