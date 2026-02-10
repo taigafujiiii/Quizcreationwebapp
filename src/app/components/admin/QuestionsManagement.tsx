@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Badge } from '../ui/badge';
 import { Checkbox } from '../ui/checkbox';
 import { Header } from '../layout/Header';
-import { AnswerMethod, Choice, Question, Category } from '../../types';
+import { AnswerMethod, Choice, Question, Category, Unit } from '../../types';
 import { ArrowLeft, Plus, Edit, Trash2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
@@ -20,7 +20,11 @@ import { toast } from 'sonner';
 export const QuestionsManagement: React.FC = () => {
   const navigate = useNavigate();
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [units, setUnits] = useState<Unit[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [selectedUnitId, setSelectedUnitId] = useState<string>('all');
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>('all');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
   const [formData, setFormData] = useState({
@@ -64,6 +68,11 @@ export const QuestionsManagement: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
+    const { data: unitData, error: unitError } = await supabase
+      .from('units')
+      .select('id, name, description')
+      .order('created_at', { ascending: true });
+
     const { data: questionData, error: questionError } = await supabase
       .from('questions')
       .select(
@@ -76,13 +85,14 @@ export const QuestionsManagement: React.FC = () => {
       .select('id, name, description, unitId:unit_id')
       .order('created_at', { ascending: true });
 
-    if (questionError || categoryError) {
+    if (unitError || questionError || categoryError) {
       toast.error('データの取得に失敗しました');
       setLoading(false);
       return;
     }
 
     setQuestions((questionData as Question[]) || []);
+    setUnits((unitData as Unit[]) || []);
     setCategories((categoryData as Category[]) || []);
     setLoading(false);
   };
@@ -90,6 +100,11 @@ export const QuestionsManagement: React.FC = () => {
   useEffect(() => {
     void loadData();
   }, []);
+
+  // 絞り込み条件が変わったら選択状態をリセット
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [selectedUnitId, selectedCategoryId]);
 
   const handleSubmit = async () => {
     if (!formData.categoryId || !formData.text.trim()) {
@@ -225,6 +240,73 @@ export const QuestionsManagement: React.FC = () => {
     return categories.find((c) => c.id === categoryId)?.name || '不明';
   };
 
+  const getUnitNameByCategoryId = (categoryId: string) => {
+    const category = categories.find((c) => c.id === categoryId);
+    if (!category) return '不明';
+    return units.find((u) => u.id === category.unitId)?.name || '不明';
+  };
+
+  const filteredQuestions = useMemo(() => {
+    let filtered = questions;
+
+    if (selectedUnitId !== 'all') {
+      const categoryIdsInUnit = categories
+        .filter((c) => c.unitId === selectedUnitId)
+        .map((c) => c.id);
+      filtered = filtered.filter((q) => categoryIdsInUnit.includes(q.categoryId));
+    }
+
+    if (selectedCategoryId !== 'all') {
+      filtered = filtered.filter((q) => q.categoryId === selectedCategoryId);
+    }
+
+    return filtered;
+  }, [questions, categories, selectedUnitId, selectedCategoryId]);
+
+  const categoryOptionsForFilter = useMemo(() => {
+    if (selectedUnitId === 'all') return categories;
+    return categories.filter((c) => c.unitId === selectedUnitId);
+  }, [categories, selectedUnitId]);
+
+  const isAllSelected =
+    filteredQuestions.length > 0 && selectedIds.length === filteredQuestions.length;
+  const isSomeSelected =
+    selectedIds.length > 0 && selectedIds.length < filteredQuestions.length;
+
+  const toggleSelectAll = (next: boolean) => {
+    if (!next) {
+      setSelectedIds([]);
+      return;
+    }
+    setSelectedIds(filteredQuestions.map((q) => q.id));
+  };
+
+  const toggleSelectedId = (id: string, next: boolean) => {
+    setSelectedIds((prev) => {
+      if (next) {
+        if (prev.includes(id)) return prev;
+        return [...prev, id];
+      }
+      return prev.filter((x) => x !== id);
+    });
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    if (!confirm(`選択した${selectedIds.length}件の問題を削除してもよろしいですか？`)) {
+      return;
+    }
+
+    const { error } = await supabase.from('questions').delete().in('id', selectedIds);
+    if (error) {
+      toast.error('問題の削除に失敗しました');
+      return;
+    }
+    toast.success(`問題を${selectedIds.length}件削除しました`);
+    setSelectedIds([]);
+    await loadData();
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
@@ -240,226 +322,299 @@ export const QuestionsManagement: React.FC = () => {
 
         <Card>
           <CardHeader>
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center gap-4">
               <CardTitle>問題一覧</CardTitle>
-              <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button onClick={handleNew}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    新規作成
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-                  <DialogHeader>
-                    <DialogTitle>
-                      {editingQuestion ? '問題を編集' : '新しい問題を作成'}
-                    </DialogTitle>
-                    <DialogDescription>
-                      問題文、選択肢、正解、解説を入力してください
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4 pt-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="category">カテゴリ</Label>
-                      <Select
-                        value={formData.categoryId}
-                        onValueChange={(value) =>
-                          setFormData({ ...formData, categoryId: value })
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="カテゴリを選択" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {categories.map((cat) => (
-                            <SelectItem key={cat.id} value={cat.id}>
-                              {cat.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="text">問題文</Label>
-                      <Textarea
-                        id="text"
-                        value={formData.text}
-                        onChange={(e) =>
-                          setFormData({ ...formData, text: e.target.value })
-                        }
-                        placeholder="問題文を入力"
-                        rows={3}
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-3">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  disabled={selectedIds.length === 0}
+                  onClick={() => void handleBulkDelete()}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  選択削除
+                </Button>
+                <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button onClick={handleNew}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      新規作成
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                      <DialogTitle>
+                        {editingQuestion ? '問題を編集' : '新しい問題を作成'}
+                      </DialogTitle>
+                      <DialogDescription>
+                        問題文、選択肢、正解、解説を入力してください
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 pt-4">
                       <div className="space-y-2">
-                        <Label htmlFor="optionA">選択肢 A</Label>
-                        <Input
-                          id="optionA"
-                          value={formData.optionA}
-                          onChange={(e) =>
-                            setFormData({ ...formData, optionA: e.target.value })
-                          }
-                          placeholder="選択肢 A"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="optionB">選択肢 B</Label>
-                        <Input
-                          id="optionB"
-                          value={formData.optionB}
-                          onChange={(e) =>
-                            setFormData({ ...formData, optionB: e.target.value })
-                          }
-                          placeholder="選択肢 B"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="optionC">選択肢 C</Label>
-                        <Input
-                          id="optionC"
-                          value={formData.optionC}
-                          onChange={(e) =>
-                            setFormData({ ...formData, optionC: e.target.value })
-                          }
-                          placeholder="選択肢 C"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="optionD">選択肢 D</Label>
-                        <Input
-                          id="optionD"
-                          value={formData.optionD}
-                          onChange={(e) =>
-                            setFormData({ ...formData, optionD: e.target.value })
-                          }
-                          placeholder="選択肢 D"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="correct">正解</Label>
-                      {formData.answerMethod === 'checkbox' ? (
-                        <div className="flex flex-wrap gap-4">
-                          {(['A', 'B', 'C', 'D'] as const).map((c) => {
-                            const id = `correct-${c.toLowerCase()}`;
-                            const checked = parseCorrectAnswerList(formData.correctAnswer).includes(c);
-                            return (
-                              <Label key={c} htmlFor={id} className="flex items-center gap-2 cursor-pointer">
-                                <Checkbox
-                                  id={id}
-                                  checked={checked}
-                                  onCheckedChange={() => toggleCorrectChoice(c)}
-                                />
-                                {c}
-                              </Label>
-                            );
-                          })}
-                        </div>
-                      ) : (
+                        <Label htmlFor="category">カテゴリ</Label>
                         <Select
-                          value={formData.correctAnswer}
+                          value={formData.categoryId}
                           onValueChange={(value) =>
-                            setFormData({ ...formData, correctAnswer: value })
+                            setFormData({ ...formData, categoryId: value })
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="カテゴリを選択" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {categories.map((cat) => (
+                              <SelectItem key={cat.id} value={cat.id}>
+                                {cat.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="text">問題文</Label>
+                        <Textarea
+                          id="text"
+                          value={formData.text}
+                          onChange={(e) =>
+                            setFormData({ ...formData, text: e.target.value })
+                          }
+                          placeholder="問題文を入力"
+                          rows={3}
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-3">
+                        <div className="space-y-2">
+                          <Label htmlFor="optionA">選択肢 A</Label>
+                          <Input
+                            id="optionA"
+                            value={formData.optionA}
+                            onChange={(e) =>
+                              setFormData({ ...formData, optionA: e.target.value })
+                            }
+                            placeholder="選択肢 A"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="optionB">選択肢 B</Label>
+                          <Input
+                            id="optionB"
+                            value={formData.optionB}
+                            onChange={(e) =>
+                              setFormData({ ...formData, optionB: e.target.value })
+                            }
+                            placeholder="選択肢 B"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="optionC">選択肢 C</Label>
+                          <Input
+                            id="optionC"
+                            value={formData.optionC}
+                            onChange={(e) =>
+                              setFormData({ ...formData, optionC: e.target.value })
+                            }
+                            placeholder="選択肢 C"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="optionD">選択肢 D</Label>
+                          <Input
+                            id="optionD"
+                            value={formData.optionD}
+                            onChange={(e) =>
+                              setFormData({ ...formData, optionD: e.target.value })
+                            }
+                            placeholder="選択肢 D"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="correct">正解</Label>
+                        {formData.answerMethod === 'checkbox' ? (
+                          <div className="flex flex-wrap gap-4">
+                            {(['A', 'B', 'C', 'D'] as const).map((c) => {
+                              const id = `correct-${c.toLowerCase()}`;
+                              const checked = parseCorrectAnswerList(formData.correctAnswer).includes(c);
+                              return (
+                                <Label key={c} htmlFor={id} className="flex items-center gap-2 cursor-pointer">
+                                  <Checkbox
+                                    id={id}
+                                    checked={checked}
+                                    onCheckedChange={() => toggleCorrectChoice(c)}
+                                  />
+                                  {c}
+                                </Label>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <Select
+                            value={formData.correctAnswer}
+                            onValueChange={(value) =>
+                              setFormData({ ...formData, correctAnswer: value })
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="A">A</SelectItem>
+                              <SelectItem value="B">B</SelectItem>
+                              <SelectItem value="C">C</SelectItem>
+                              <SelectItem value="D">D</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="answerMethod">回答方式</Label>
+                        <Select
+                          value={formData.answerMethod}
+                          onValueChange={(value: AnswerMethod) =>
+                            setFormData({
+                              ...formData,
+                              answerMethod: value,
+                              correctAnswer:
+                                value === 'dropdown'
+                                  ? (parseCorrectAnswerList(formData.correctAnswer)[0] ?? 'A')
+                                  : (parseCorrectAnswerList(formData.correctAnswer).join(',') || 'A'),
+                            })
                           }
                         >
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="A">A</SelectItem>
-                            <SelectItem value="B">B</SelectItem>
-                            <SelectItem value="C">C</SelectItem>
-                            <SelectItem value="D">D</SelectItem>
+                            <SelectItem value="checkbox">チェックボックス</SelectItem>
+                            <SelectItem value="dropdown">プルダウン</SelectItem>
                           </SelectContent>
                         </Select>
-                      )}
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="answerMethod">回答方式</Label>
-                      <Select
-                        value={formData.answerMethod}
-                        onValueChange={(value: AnswerMethod) =>
-                          setFormData({
-                            ...formData,
-                            answerMethod: value,
-                            correctAnswer:
-                              value === 'dropdown'
-                                ? (parseCorrectAnswerList(formData.correctAnswer)[0] ?? 'A')
-                                : (parseCorrectAnswerList(formData.correctAnswer).join(',') || 'A'),
-                          })
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="checkbox">チェックボックス</SelectItem>
-                          <SelectItem value="dropdown">プルダウン</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="explanation">解説</Label>
-                      <Textarea
-                        id="explanation"
-                        value={formData.explanation}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            explanation: e.target.value,
-                          })
-                        }
-                        placeholder="解説を入力"
-                        rows={3}
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between p-4 border rounded-lg">
-                      <div>
-                        <Label htmlFor="active">出題対象にする</Label>
-                        <p className="text-sm text-gray-500">
-                          OFFの場合、この問題は出題されません
-                        </p>
                       </div>
-                      <Switch
-                        id="active"
-                        checked={formData.isActive}
-                        onCheckedChange={(checked) =>
-                          setFormData({ ...formData, isActive: checked })
-                        }
-                      />
-                    </div>
 
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        variant="outline"
-                        onClick={() => setIsDialogOpen(false)}
-                      >
-                        キャンセル
-                      </Button>
-                      <Button onClick={handleSubmit}>
-                        {editingQuestion ? '更新' : '作成'}
-                      </Button>
+                      <div className="space-y-2">
+                        <Label htmlFor="explanation">解説</Label>
+                        <Textarea
+                          id="explanation"
+                          value={formData.explanation}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              explanation: e.target.value,
+                            })
+                          }
+                          placeholder="解説を入力"
+                          rows={3}
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between p-4 border rounded-lg">
+                        <div>
+                          <Label htmlFor="active">出題対象にする</Label>
+                          <p className="text-sm text-gray-500">
+                            OFFの場合、この問題は出題されません
+                          </p>
+                        </div>
+                        <Switch
+                          id="active"
+                          checked={formData.isActive}
+                          onCheckedChange={(checked) =>
+                            setFormData({ ...formData, isActive: checked })
+                          }
+                        />
+                      </div>
+
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="outline"
+                          onClick={() => setIsDialogOpen(false)}
+                        >
+                          キャンセル
+                        </Button>
+                        <Button onClick={handleSubmit}>
+                          {editingQuestion ? '更新' : '作成'}
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                </DialogContent>
-              </Dialog>
+                  </DialogContent>
+                </Dialog>
+              </div>
             </div>
           </CardHeader>
           <CardContent>
+            <div className="flex flex-col sm:flex-row sm:items-end gap-3 mb-4">
+              <div className="space-y-2 w-full sm:w-64">
+                <Label>単元で絞り込み</Label>
+                <Select
+                  value={selectedUnitId}
+                  onValueChange={(value) => {
+                    setSelectedUnitId(value);
+                    setSelectedCategoryId('all');
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全単元</SelectItem>
+                    {units.map((u) => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2 w-full sm:w-72">
+                <Label>カテゴリで絞り込み</Label>
+                <Select
+                  value={selectedCategoryId}
+                  onValueChange={(value) => setSelectedCategoryId(value)}
+                  disabled={categoryOptionsForFilter.length === 0}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全カテゴリ</SelectItem>
+                    {categoryOptionsForFilter.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="text-sm text-gray-600 sm:ml-auto">
+                表示: <span className="font-semibold">{filteredQuestions.length}</span> 件
+                {selectedIds.length > 0 && (
+                  <>
+                    {' '}
+                    / 選択: <span className="font-semibold">{selectedIds.length}</span> 件
+                  </>
+                )}
+              </div>
+            </div>
+
             {loading ? (
               <div className="py-8 text-center text-gray-500">読み込み中...</div>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-[48px]">
+                      <Checkbox
+                        checked={isSomeSelected ? 'indeterminate' : isAllSelected}
+                        onCheckedChange={(v) => toggleSelectAll(v === true)}
+                      />
+                    </TableHead>
                     <TableHead>問題文</TableHead>
+                    <TableHead>単元</TableHead>
                     <TableHead>カテゴリ</TableHead>
                     <TableHead>正解</TableHead>
                     <TableHead>回答方式</TableHead>
@@ -468,17 +623,31 @@ export const QuestionsManagement: React.FC = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {questions.map((question) => (
+                  {filteredQuestions.map((question) => (
                     <TableRow key={question.id}>
-                      <TableCell className="max-w-md truncate">
-                        <div className="flex items-center gap-2">
-                          {question.text}
+                      <TableCell>
+                        <Checkbox
+                          checked={selectedIds.includes(question.id)}
+                          onCheckedChange={(v) => toggleSelectedId(question.id, Boolean(v))}
+                        />
+                      </TableCell>
+                      <TableCell className="max-w-md whitespace-normal break-words">
+                        <div className="space-y-1">
+                          <div>{question.text}</div>
                           {question.isAssignment && (
-                            <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
-                              課題
-                            </Badge>
+                            <div>
+                              <Badge
+                                variant="outline"
+                                className="bg-orange-50 text-orange-700 border-orange-200"
+                              >
+                                課題
+                              </Badge>
+                            </div>
                           )}
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{getUnitNameByCategoryId(question.categoryId)}</Badge>
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline">
