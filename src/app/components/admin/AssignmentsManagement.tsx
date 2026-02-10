@@ -113,17 +113,6 @@ export const AssignmentsManagement: React.FC = () => {
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
   const importFileRef = useRef<HTMLInputElement | null>(null);
   const [importErrors, setImportErrors] = useState<string[]>([]);
-  const [importPreview, setImportPreview] = useState<
-    Array<{
-      rowNumber: number;
-      unitName?: string;
-      categoryName?: string;
-      text: string;
-      correctAnswer: string;
-      answerMethod: AnswerMethod;
-      isActive: boolean;
-    }>
-  >([]);
   const [importPayload, setImportPayload] = useState<
     Array<{
       text: string;
@@ -638,7 +627,6 @@ export const AssignmentsManagement: React.FC = () => {
 
   const resetImportState = () => {
     setImportErrors([]);
-    setImportPreview([]);
     setImportPayload([]);
     setImporting(false);
     if (importFileRef.current) importFileRef.current.value = '';
@@ -736,7 +724,6 @@ export const AssignmentsManagement: React.FC = () => {
 
     const errors: string[] = [];
     const payload: typeof importPayload = [];
-    const preview: typeof importPreview = [];
 
     for (let i = 1; i < rows.length; i++) {
       const rowNumber = i + 1; // CSV is 1-based, header is line 1
@@ -813,24 +800,11 @@ export const AssignmentsManagement: React.FC = () => {
         is_active: activeParsed.value,
         is_assignment: true,
       });
-
-      if (preview.length < 5) {
-        preview.push({
-          rowNumber,
-          unitName: unitResolved.unitName,
-          categoryName: categoryResolved.categoryName,
-          text: textRaw,
-          correctAnswer: correctParsed.value,
-          answerMethod: answerMethodParsed.value,
-          isActive: activeParsed.value,
-        });
-      }
     }
 
     if (errors.length > 0) {
       setImportErrors(errors);
       setImportPayload([]);
-      setImportPreview([]);
       return;
     }
 
@@ -841,7 +815,6 @@ export const AssignmentsManagement: React.FC = () => {
 
     setImportErrors([]);
     setImportPayload(payload);
-    setImportPreview(preview);
   };
 
   const handleImportSubmit = async () => {
@@ -1115,36 +1088,6 @@ export const AssignmentsManagement: React.FC = () => {
                               <div className="text-sm text-gray-700">
                                 インポート対象: <span className="font-semibold">{importPayload.length}</span> 件
                               </div>
-                              {importPreview.length > 0 && (
-                                <div className="overflow-x-auto border rounded-md">
-                                  <Table className="table-fixed">
-                                    <TableHeader>
-                                      <TableRow>
-                                        <TableHead className="w-[56px]">行</TableHead>
-                                        <TableHead className="w-[120px] whitespace-normal">単元</TableHead>
-                                        <TableHead className="w-[220px] whitespace-normal">カテゴリ</TableHead>
-                                        <TableHead className="whitespace-normal">問題文</TableHead>
-                                        <TableHead>正解</TableHead>
-                                        <TableHead>回答方式</TableHead>
-                                        <TableHead>公開</TableHead>
-                                      </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                      {importPreview.map((p) => (
-                                        <TableRow key={p.rowNumber}>
-                                          <TableCell>{p.rowNumber}</TableCell>
-                                          <TableCell className="whitespace-normal break-words">{p.unitName ?? '-'}</TableCell>
-                                          <TableCell className="whitespace-normal break-words">{p.categoryName ?? '-'}</TableCell>
-                                          <TableCell className="whitespace-normal break-words">{p.text}</TableCell>
-                                          <TableCell>{p.correctAnswer}</TableCell>
-                                          <TableCell>{p.answerMethod === 'dropdown' ? 'プルダウン' : 'チェックボックス'}</TableCell>
-                                          <TableCell>{p.isActive ? '公開' : '非公開'}</TableCell>
-                                        </TableRow>
-                                      ))}
-                                    </TableBody>
-                                  </Table>
-                                </div>
-                              )}
                             </div>
                           )}
 
