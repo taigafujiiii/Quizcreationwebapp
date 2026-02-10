@@ -188,7 +188,11 @@ export const CategoryList: React.FC = () => {
                         </div>
                       </div>
                       {hasAssignments && (
-                        <ArrowRight className="h-5 w-5 text-gray-400 flex-shrink-0 mt-1" />
+                        <div className="flex items-center gap-2 flex-shrink-0 mt-1 text-sm font-medium text-green-700">
+                          <span className="hidden sm:inline">回答を始める</span>
+                          <span className="sm:hidden">開始</span>
+                          <ArrowRight className="h-5 w-5 text-gray-400" />
+                        </div>
                       )}
                     </div>
                   </CardHeader>

@@ -24,6 +24,7 @@ export const Quiz: React.FC = () => {
   const [answers, setAnswers] = useState<QuizAnswer[]>([]);
   const [selectedAnswer, setSelectedAnswer] = useState<string>('');
   const [showExitModal, setShowExitModal] = useState(false);
+  const [showBackModal, setShowBackModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -163,6 +164,15 @@ export const Quiz: React.FC = () => {
     navigate('/');
   };
 
+  const handleBackClick = () => {
+    setShowBackModal(true);
+  };
+
+  const handleBackConfirm = () => {
+    const to = unitId ? `/assignment/categories/${unitId}` : '/assignment/units';
+    navigate(to);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
@@ -221,10 +231,33 @@ export const Quiz: React.FC = () => {
         onConfirm={handleExitConfirm}
       />
 
+      <ExitQuizModal
+        open={showBackModal}
+        onOpenChange={setShowBackModal}
+        onConfirm={handleBackConfirm}
+        title="カテゴリ選択へ戻りますか？"
+        description={
+          <>
+            カテゴリ選択に戻ると、現在の回答を中断します。
+            <br />
+            回答の進捗は保存されませんが、よろしいですか？
+          </>
+        }
+        confirmText="中断して戻る"
+      />
+
       <div className="max-w-3xl mx-auto px-4 py-8">
         {isAssignmentCourse && (
           <div className="mb-4">
             <Badge className="bg-green-600">課題コース</Badge>
+          </div>
+        )}
+
+        {isAssignmentCourse && (
+          <div className="mb-4">
+            <Button variant="outline" onClick={handleBackClick}>
+              カテゴリ選択へ戻る
+            </Button>
           </div>
         )}
 
