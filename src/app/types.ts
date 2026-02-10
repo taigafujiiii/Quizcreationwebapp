@@ -23,6 +23,8 @@ export interface Category {
   unitId: string;
 }
 
+export type AnswerMethod = 'dropdown' | 'checkbox';
+
 export interface Question {
   id: string;
   text: string;
@@ -31,6 +33,7 @@ export interface Question {
   optionC: string;
   optionD: string;
   correctAnswer: 'A' | 'B' | 'C' | 'D';
+  answerMethod: AnswerMethod;
   explanation: string;
   categoryId: string;
   isActive: boolean;

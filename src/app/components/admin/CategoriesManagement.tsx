@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -11,13 +11,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Badge } from '../ui/badge';
 import { ScrollArea, ScrollBar } from '../ui/scroll-area';
 import { Header } from '../layout/Header';
-import { mockCategories, mockUnits } from '../../data/mockData';
-import { Category } from '../../types';
+import { Category, Unit } from '../../types';
 import { ArrowLeft, Plus, Edit, Trash2, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '../ui/utils';
+import { supabase } from '../../lib/supabase';
 
-// 単元カードコンポーネント
 interface UnitCardProps {
   unitId: string;
   unitName: string;
@@ -52,7 +51,8 @@ const UnitCard: React.FC<UnitCardProps> = ({ unitId, unitName, categoryCount, is
 
 export const CategoriesManagement: React.FC = () => {
   const navigate = useNavigate();
-  const [categories, setCategories] = useState<Category[]>(mockCategories);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [units, setUnits] = useState<Unit[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [formData, setFormData] = useState({ 
@@ -60,36 +60,77 @@ export const CategoriesManagement: React.FC = () => {
     description: '', 
     unitId: '' 
   });
-  
-  // 単元フィルタ状態（'all' または 単元ID）
   const [selectedUnitId, setSelectedUnitId] = useState<string>('all');
+  const [loading, setLoading] = useState(true);
 
-  const handleSubmit = () => {
+  const loadData = async () => {
+    setLoading(true);
+    const { data: unitData, error: unitError } = await supabase
+      .from('units')
+      .select('id, name, description')
+      .order('created_at', { ascending: true });
+
+    const { data: categoryData, error: categoryError } = await supabase
+      .from('categories')
+      .select('id, name, description, unitId:unit_id')
+      .order('created_at', { ascending: true });
+
+    if (unitError || categoryError) {
+      toast.error('データの取得に失敗しました');
+      setLoading(false);
+      return;
+    }
+
+    setUnits(unitData || []);
+    setCategories((categoryData as Category[]) || []);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    void loadData();
+  }, []);
+
+  const handleSubmit = async () => {
     if (!formData.name || !formData.unitId) {
       toast.error('カテゴリ名と単元を入力してください');
       return;
     }
 
     if (editingCategory) {
-      // 編集
-      setCategories(
-        categories.map((c) =>
-          c.id === editingCategory.id ? { ...c, ...formData } : c
-        )
-      );
+      const { error } = await supabase
+        .from('categories')
+        .update({
+          name: formData.name.trim(),
+          description: formData.description.trim(),
+          unit_id: formData.unitId,
+        })
+        .eq('id', editingCategory.id);
+
+      if (error) {
+        toast.error('カテゴリを更新できませんでした');
+        return;
+      }
       toast.success('カテゴリを更新しました');
     } else {
-      // 新規作成
-      const newCategory: Category = {
-        id: `c${categories.length + 1}`,
-        ...formData,
-      };
-      setCategories([...categories, newCategory]);
+      const { error } = await supabase
+        .from('categories')
+        .insert({
+          name: formData.name.trim(),
+          description: formData.description.trim(),
+          unit_id: formData.unitId,
+        });
+
+      if (error) {
+        toast.error('カテゴリを作成できませんでした');
+        return;
+      }
       toast.success('カテゴリを作成しました');
     }
+
     setIsDialogOpen(false);
     setFormData({ name: '', description: '', unitId: '' });
     setEditingCategory(null);
+    await loadData();
   };
 
   const handleEdit = (category: Category) => {
@@ -102,11 +143,18 @@ export const CategoriesManagement: React.FC = () => {
     setIsDialogOpen(true);
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm('このカテゴリを削除してもよろしいですか？')) {
-      setCategories(categories.filter((c) => c.id !== id));
-      toast.success('カテゴリを削除しました');
+  const handleDelete = async (id: string) => {
+    if (!confirm('このカテゴリを削除してもよろしいですか？')) {
+      return;
     }
+
+    const { error } = await supabase.from('categories').delete().eq('id', id);
+    if (error) {
+      toast.error('カテゴリを削除できませんでした');
+      return;
+    }
+    toast.success('カテゴリを削除しました');
+    await loadData();
   };
 
   const handleNew = () => {
@@ -116,11 +164,10 @@ export const CategoriesManagement: React.FC = () => {
   };
 
   const getUnitName = (unitId: string) => {
-    const unit = mockUnits.find((u) => u.id === unitId);
+    const unit = units.find((u) => u.id === unitId);
     return unit ? unit.name : '不明';
   };
 
-  // 選択された単元のカテゴリをフィルタリング
   const filteredCategories = useMemo(() => {
     if (selectedUnitId === 'all') {
       return categories;
@@ -128,18 +175,16 @@ export const CategoriesManagement: React.FC = () => {
     return categories.filter((c) => c.unitId === selectedUnitId);
   }, [categories, selectedUnitId]);
 
-  // 各単元のカテゴリ数を計算
   const unitCategoryCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    mockUnits.forEach((unit) => {
+    units.forEach((unit) => {
       counts[unit.id] = categories.filter((c) => c.unitId === unit.id).length;
     });
     return counts;
-  }, [categories]);
+  }, [categories, units]);
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* ヘッダー */}
       <Header />
 
       <div className="max-w-6xl mx-auto px-4 py-8">
@@ -151,13 +196,11 @@ export const CategoriesManagement: React.FC = () => {
           <h1 className="text-2xl sm:text-3xl">カテゴリ管理</h1>
         </div>
 
-        {/* 単元カード絞り込みエリア */}
         <Card className="mb-6">
           <CardHeader>
             <CardTitle className="text-lg">単元で絞り込み</CardTitle>
           </CardHeader>
           <CardContent>
-            {/* Desktop: 折り返し表示 */}
             <div className="hidden md:flex flex-wrap gap-3">
               <UnitCard
                 unitId="all"
@@ -166,7 +209,7 @@ export const CategoriesManagement: React.FC = () => {
                 isActive={selectedUnitId === 'all'}
                 onClick={() => setSelectedUnitId('all')}
               />
-              {mockUnits.map((unit) => (
+              {units.map((unit) => (
                 <UnitCard
                   key={unit.id}
                   unitId={unit.id}
@@ -178,7 +221,6 @@ export const CategoriesManagement: React.FC = () => {
               ))}
             </div>
 
-            {/* Mobile: 横スクロール */}
             <ScrollArea className="md:hidden w-full whitespace-nowrap">
               <div className="flex gap-3 pb-4">
                 <UnitCard
@@ -188,7 +230,7 @@ export const CategoriesManagement: React.FC = () => {
                   isActive={selectedUnitId === 'all'}
                   onClick={() => setSelectedUnitId('all')}
                 />
-                {mockUnits.map((unit) => (
+                {units.map((unit) => (
                   <UnitCard
                     key={unit.id}
                     unitId={unit.id}
@@ -204,7 +246,6 @@ export const CategoriesManagement: React.FC = () => {
           </CardContent>
         </Card>
 
-        {/* カテゴリ一覧 */}
         <Card>
           <CardHeader>
             <div className="flex justify-between items-center">
@@ -238,7 +279,7 @@ export const CategoriesManagement: React.FC = () => {
                           <SelectValue placeholder="単元を選択してください" />
                         </SelectTrigger>
                         <SelectContent>
-                          {mockUnits.map((unit) => (
+                          {units.map((unit) => (
                             <SelectItem key={unit.id} value={unit.id}>
                               {unit.name}
                             </SelectItem>
@@ -289,51 +330,55 @@ export const CategoriesManagement: React.FC = () => {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>所属単元</TableHead>
-                    <TableHead>カテゴリ名</TableHead>
-                    <TableHead>説明</TableHead>
-                    <TableHead className="text-right">操作</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredCategories.map((category) => (
-                    <TableRow key={category.id}>
-                      <TableCell>
-                        <Badge variant="secondary">
-                          {getUnitName(category.unitId)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="font-medium">{category.name}</TableCell>
-                      <TableCell className="text-gray-600">
-                        {category.description}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleEdit(category)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleDelete(category.id)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
+            {loading ? (
+              <div className="py-8 text-center text-gray-500">読み込み中...</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>所属単元</TableHead>
+                      <TableHead>カテゴリ名</TableHead>
+                      <TableHead>説明</TableHead>
+                      <TableHead className="text-right">操作</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredCategories.map((category) => (
+                      <TableRow key={category.id}>
+                        <TableCell>
+                          <Badge variant="secondary">
+                            {getUnitName(category.unitId)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="font-medium">{category.name}</TableCell>
+                        <TableCell className="text-gray-600">
+                          {category.description}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleEdit(category)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDelete(category.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

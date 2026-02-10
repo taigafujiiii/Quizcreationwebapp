@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -11,13 +11,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import { Badge } from '../ui/badge';
 import { Header } from '../layout/Header';
-import { mockQuestions, mockCategories } from '../../data/mockData';
-import { Question } from '../../types';
+import { AnswerMethod, Question, Category } from '../../types';
 import { ArrowLeft, Plus, Edit, Trash2 } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import { toast } from 'sonner';
 
 export const QuestionsManagement: React.FC = () => {
   const navigate = useNavigate();
-  const [questions, setQuestions] = useState<Question[]>(mockQuestions);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
   const [formData, setFormData] = useState({
@@ -27,27 +29,97 @@ export const QuestionsManagement: React.FC = () => {
     optionC: '',
     optionD: '',
     correctAnswer: 'A' as 'A' | 'B' | 'C' | 'D',
+    answerMethod: 'checkbox' as AnswerMethod,
     explanation: '',
     categoryId: '',
     isActive: true,
   });
+  const [loading, setLoading] = useState(true);
 
-  const handleSubmit = () => {
-    if (editingQuestion) {
-      setQuestions(
-        questions.map((q) =>
-          q.id === editingQuestion.id ? { ...q, ...formData } : q
-        )
-      );
-    } else {
-      const newQuestion: Question = {
-        id: `q${questions.length + 1}`,
-        ...formData,
-      };
-      setQuestions([...questions, newQuestion]);
+  const loadData = async () => {
+    setLoading(true);
+    const { data: questionData, error: questionError } = await supabase
+      .from('questions')
+      .select(
+        'id, text, optionA:option_a, optionB:option_b, optionC:option_c, optionD:option_d, correctAnswer:correct_answer, answerMethod:answer_method, explanation, categoryId:category_id, isActive:is_active, isAssignment:is_assignment'
+      )
+      .order('created_at', { ascending: false });
+
+    const { data: categoryData, error: categoryError } = await supabase
+      .from('categories')
+      .select('id, name, description, unitId:unit_id')
+      .order('created_at', { ascending: true });
+
+    if (questionError || categoryError) {
+      toast.error('データの取得に失敗しました');
+      setLoading(false);
+      return;
     }
+
+    setQuestions((questionData as Question[]) || []);
+    setCategories((categoryData as Category[]) || []);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    void loadData();
+  }, []);
+
+  const handleSubmit = async () => {
+    if (!formData.categoryId || !formData.text.trim()) {
+      toast.error('カテゴリと問題文を入力してください');
+      return;
+    }
+
+    if (editingQuestion) {
+      const { error } = await supabase
+        .from('questions')
+        .update({
+          text: formData.text,
+          option_a: formData.optionA,
+          option_b: formData.optionB,
+          option_c: formData.optionC,
+          option_d: formData.optionD,
+          correct_answer: formData.correctAnswer,
+          answer_method: formData.answerMethod,
+          explanation: formData.explanation,
+          category_id: formData.categoryId,
+          is_active: formData.isActive,
+        })
+        .eq('id', editingQuestion.id);
+
+      if (error) {
+        toast.error('問題の更新に失敗しました');
+        return;
+      }
+      toast.success('問題を更新しました');
+    } else {
+      const { error } = await supabase
+        .from('questions')
+        .insert({
+          text: formData.text,
+          option_a: formData.optionA,
+          option_b: formData.optionB,
+          option_c: formData.optionC,
+          option_d: formData.optionD,
+          correct_answer: formData.correctAnswer,
+          answer_method: formData.answerMethod,
+          explanation: formData.explanation,
+          category_id: formData.categoryId,
+          is_active: formData.isActive,
+          is_assignment: false,
+        });
+
+      if (error) {
+        toast.error('問題の作成に失敗しました');
+        return;
+      }
+      toast.success('問題を作成しました');
+    }
+
     setIsDialogOpen(false);
     resetForm();
+    await loadData();
   };
 
   const resetForm = () => {
@@ -58,6 +130,7 @@ export const QuestionsManagement: React.FC = () => {
       optionC: '',
       optionD: '',
       correctAnswer: 'A',
+      answerMethod: 'checkbox',
       explanation: '',
       categoryId: '',
       isActive: true,
@@ -74,6 +147,7 @@ export const QuestionsManagement: React.FC = () => {
       optionC: question.optionC,
       optionD: question.optionD,
       correctAnswer: question.correctAnswer,
+      answerMethod: question.answerMethod,
       explanation: question.explanation,
       categoryId: question.categoryId,
       isActive: question.isActive,
@@ -81,10 +155,18 @@ export const QuestionsManagement: React.FC = () => {
     setIsDialogOpen(true);
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm('この問題を削除してもよろしいですか？')) {
-      setQuestions(questions.filter((q) => q.id !== id));
+  const handleDelete = async (id: string) => {
+    if (!confirm('この問題を削除してもよろしいですか？')) {
+      return;
     }
+
+    const { error } = await supabase.from('questions').delete().eq('id', id);
+    if (error) {
+      toast.error('問題の削除に失敗しました');
+      return;
+    }
+    toast.success('問題を削除しました');
+    await loadData();
   };
 
   const handleNew = () => {
@@ -92,21 +174,29 @@ export const QuestionsManagement: React.FC = () => {
     setIsDialogOpen(true);
   };
 
-  const toggleActive = (id: string) => {
+  const toggleActive = async (id: string, current: boolean) => {
+    const { error } = await supabase
+      .from('questions')
+      .update({ is_active: !current })
+      .eq('id', id);
+
+    if (error) {
+      toast.error('状態の更新に失敗しました');
+      return;
+    }
     setQuestions(
       questions.map((q) =>
-        q.id === id ? { ...q, isActive: !q.isActive } : q
+        q.id === id ? { ...q, isActive: !current } : q
       )
     );
   };
 
   const getCategoryName = (categoryId: string) => {
-    return mockCategories.find((c) => c.id === categoryId)?.name || '不明';
+    return categories.find((c) => c.id === categoryId)?.name || '不明';
   };
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* ヘッダー */}
       <Header />
 
       <div className="max-w-7xl mx-auto px-4 py-8">
@@ -151,7 +241,7 @@ export const QuestionsManagement: React.FC = () => {
                           <SelectValue placeholder="カテゴリを選択" />
                         </SelectTrigger>
                         <SelectContent>
-                          {mockCategories.map((cat) => (
+                          {categories.map((cat) => (
                             <SelectItem key={cat.id} value={cat.id}>
                               {cat.name}
                             </SelectItem>
@@ -241,6 +331,24 @@ export const QuestionsManagement: React.FC = () => {
                     </div>
 
                     <div className="space-y-2">
+                      <Label htmlFor="answerMethod">回答方式</Label>
+                      <Select
+                        value={formData.answerMethod}
+                        onValueChange={(value: AnswerMethod) =>
+                          setFormData({ ...formData, answerMethod: value })
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="checkbox">チェックボックス</SelectItem>
+                          <SelectItem value="dropdown">プルダウン</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
                       <Label htmlFor="explanation">解説</Label>
                       <Textarea
                         id="explanation"
@@ -289,68 +397,76 @@ export const QuestionsManagement: React.FC = () => {
             </div>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>問題文</TableHead>
-                  <TableHead>カテゴリ</TableHead>
-                  <TableHead>正解</TableHead>
-                  <TableHead>状態</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {questions.map((question) => (
-                  <TableRow key={question.id}>
-                    <TableCell className="max-w-md truncate">
-                      <div className="flex items-center gap-2">
-                        {question.text}
-                        {question.isAssignment && (
-                          <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
-                            課題
-                          </Badge>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">
-                        {getCategoryName(question.categoryId)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{question.correctAnswer}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Switch
-                          checked={question.isActive}
-                          onCheckedChange={() => toggleActive(question.id)}
-                        />
-                        <span className="text-sm">
-                          {question.isActive ? '公開中' : '非公開'}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleEdit(question)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleDelete(question.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
+            {loading ? (
+              <div className="py-8 text-center text-gray-500">読み込み中...</div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>問題文</TableHead>
+                    <TableHead>カテゴリ</TableHead>
+                    <TableHead>正解</TableHead>
+                    <TableHead>回答方式</TableHead>
+                    <TableHead>状態</TableHead>
+                    <TableHead className="text-right">操作</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {questions.map((question) => (
+                    <TableRow key={question.id}>
+                      <TableCell className="max-w-md truncate">
+                        <div className="flex items-center gap-2">
+                          {question.text}
+                          {question.isAssignment && (
+                            <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
+                              課題
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">
+                          {getCategoryName(question.categoryId)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{question.correctAnswer}</TableCell>
+                      <TableCell>
+                        {question.answerMethod === 'dropdown' ? 'プルダウン' : 'チェックボックス'}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={question.isActive}
+                            onCheckedChange={() => toggleActive(question.id, question.isActive)}
+                          />
+                          <span className="text-sm">
+                            {question.isActive ? '公開中' : '非公開'}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleEdit(question)}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDelete(question.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </CardContent>
         </Card>
       </div>

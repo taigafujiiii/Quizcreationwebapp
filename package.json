@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "dev": "vite"
+    "dev": "vite",
+    "test:e2e": "set -a; source .env.e2e; set +a; npx playwright test",
+    "test:e2e:watch": "chokidar \"src/**/*.{ts,tsx,js,jsx}\" \"tests/e2e/**/*.ts\" \"playwright.config.ts\" -c \"npm run test:e2e\""
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
@@ -39,6 +41,7 @@
     "@radix-ui/react-toggle": "1.1.2",
     "@radix-ui/react-toggle-group": "1.1.2",
     "@radix-ui/react-tooltip": "1.1.8",
+    "@supabase/supabase-js": "2.56.0",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "cmdk": "1.1.1",
@@ -64,8 +67,11 @@
     "vaul": "1.1.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.1",
     "@tailwindcss/vite": "4.1.12",
     "@vitejs/plugin-react": "4.7.0",
+    "chokidar-cli": "^3.0.0",
+    "supabase": "^2.75.5",
     "tailwindcss": "4.1.12",
     "vite": "6.3.5"
   },

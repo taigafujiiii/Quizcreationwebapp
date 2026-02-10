@@ -34,10 +34,15 @@ export const Login: React.FC = () => {
     setLoading(true);
 
     try {
-      await login(email, password);
-      
+      const currentUser = await login(email, password);
+
+      if (!currentUser) {
+        setError('アカウントが有効ではありません');
+        return;
+      }
+
       // 管理者かユーザーかで遷移先を変更
-      if (email.includes('admin')) {
+      if (currentUser.role === 'admin') {
         navigate('/admin');
       } else {
         navigate('/'); // ユーザーはHomeに遷移
@@ -88,7 +93,7 @@ export const Login: React.FC = () => {
                 />
               </div>
               <p className="text-xs text-gray-500 mt-1">
-                デモ: admin@test.com で管理者、user@test.com でユーザー
+                管理者または招待されたユーザーのメールアドレスでログインします
               </p>
             </div>
 

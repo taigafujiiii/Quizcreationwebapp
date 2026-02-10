@@ -60,8 +60,8 @@ export const Verify: React.FC = () => {
                   リンクが無効か、期限切れの可能性があります。
                 </p>
               </div>
-              <Button onClick={() => navigate('/register')} className="w-full">
-                新規登録へ戻る
+              <Button onClick={() => navigate('/login')} className="w-full">
+                ログインへ戻る
               </Button>
             </>
           )}

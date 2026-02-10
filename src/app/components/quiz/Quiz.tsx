@@ -3,14 +3,15 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Progress } from '../ui/progress';
-import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
+import { Checkbox } from '../ui/checkbox';
 import { Label } from '../ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Badge } from '../ui/badge';
 import { Header } from '../layout/Header';
 import { ExitQuizModal } from '../layout/ExitQuizModal';
-import { mockQuestions } from '../../data/mockData';
 import { Question, QuizAnswer } from '../../types';
 import { AlertCircle } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
 
 export const Quiz: React.FC = () => {
   const location = useLocation();
@@ -23,49 +24,84 @@ export const Quiz: React.FC = () => {
   const [answers, setAnswers] = useState<QuizAnswer[]>([]);
   const [selectedAnswer, setSelectedAnswer] = useState<string>('');
   const [showExitModal, setShowExitModal] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   const isAssignmentCourse = courseType === 'assignment';
 
   useEffect(() => {
-    // クイズ問題を取得
-    let filtered = mockQuestions.filter((q) => q.isActive);
+    const loadQuestions = async () => {
+      setLoading(true);
+      setError('');
 
-    if (isAssignmentCourse) {
-      // 課題コースの場合：該当カテゴリの課題問題のみ
-      filtered = filtered.filter(
-        (q) => q.categoryId === categoryId && q.isAssignment
-      );
-    } else {
-      // 自由演習コースの場合：既存のロジック
-      if (mode === 'category') {
-        filtered = filtered.filter((q) => q.categoryId === categoryId);
-      } else if (mode === 'multiple') {
-        filtered = filtered.filter((q) => categoryIds.includes(q.categoryId));
-      } else if (mode === 'unit') {
-        const unitCategories = mockQuestions
-          .map((q) => q.categoryId)
-          .filter((catId) => {
-            const cat = mockQuestions.find((q) => q.categoryId === catId);
-            return cat !== undefined;
-          });
-        filtered = filtered.filter((q) => unitCategories.includes(q.categoryId));
+      let query = supabase
+        .from('questions')
+        .select(
+          'id, text, optionA:option_a, optionB:option_b, optionC:option_c, optionD:option_d, correctAnswer:correct_answer, answerMethod:answer_method, explanation, categoryId:category_id, isActive:is_active, isAssignment:is_assignment'
+        )
+        .eq('is_active', true);
+
+      if (isAssignmentCourse) {
+        if (!categoryId) {
+          setError('カテゴリが選択されていません');
+          setLoading(false);
+          return;
+        }
+        query = query.eq('category_id', categoryId).eq('is_assignment', true);
+      } else {
+        if (mode === 'category') {
+          query = query.eq('category_id', categoryId);
+        } else if (mode === 'multiple') {
+          if (Array.isArray(categoryIds) && categoryIds.length > 0) {
+            query = query.in('category_id', categoryIds);
+          }
+        } else if (mode === 'unit') {
+          if (unitId) {
+            const { data: unitCategories } = await supabase
+              .from('categories')
+              .select('id')
+              .eq('unit_id', unitId);
+            const unitCategoryIds = (unitCategories || []).map((c) => c.id);
+            if (unitCategoryIds.length > 0) {
+              query = query.in('category_id', unitCategoryIds);
+            } else {
+              setQuestions([]);
+              setLoading(false);
+              return;
+            }
+          }
+        }
       }
 
-      // 自由演習の場合はシャッフルして指定数だけ取得
-      const shuffled = [...filtered].sort(() => Math.random() - 0.5);
-      filtered = shuffled.slice(0, Math.min(questionCount, filtered.length));
-    }
+      const { data, error: queryError } = await query;
 
-    setQuestions(filtered);
+      if (queryError) {
+        setError('問題の取得に失敗しました');
+        setLoading(false);
+        return;
+      }
+
+      let filtered = (data as Question[]) || [];
+
+      if (!isAssignmentCourse) {
+        const shuffled = [...filtered].sort(() => Math.random() - 0.5);
+        const count = Number(questionCount) || 10;
+        filtered = shuffled.slice(0, Math.min(count, shuffled.length));
+      }
+
+      setQuestions(filtered);
+      setLoading(false);
+    };
+
+    void loadQuestions();
   }, [mode, unitId, categoryId, categoryIds, questionCount, courseType, isAssignmentCourse]);
 
   const currentQuestion = questions[currentIndex];
-  const progress = ((currentIndex + 1) / questions.length) * 100;
+  const progress = questions.length ? ((currentIndex + 1) / questions.length) * 100 : 0;
 
   const handleNext = () => {
-    if (!selectedAnswer) return;
+    if (!selectedAnswer || !currentQuestion) return;
 
-    // 回答を保存
     const newAnswer: QuizAnswer = {
       questionId: currentQuestion.id,
       userAnswer: selectedAnswer as QuizAnswer['userAnswer'],
@@ -73,11 +109,9 @@ export const Quiz: React.FC = () => {
     setAnswers([...answers, newAnswer]);
     setSelectedAnswer('');
 
-    // 次の問題へ or 結果画面へ
     if (currentIndex < questions.length - 1) {
       setCurrentIndex(currentIndex + 1);
     } else {
-      // 結果画面へ遷移
       navigate('/result', {
         state: {
           questions,
@@ -92,9 +126,33 @@ export const Quiz: React.FC = () => {
   };
 
   const handleExitConfirm = () => {
-    const homeRoute = '/';
-    navigate(homeRoute);
+    navigate('/');
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-6 text-center text-gray-500">読み込み中...</CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-6 text-center">
+            <AlertCircle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
+            <h2 className="text-xl mb-2">エラー</h2>
+            <p className="text-gray-600 mb-4">{error}</p>
+            <Button onClick={() => navigate('/')}>戻る</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (questions.length === 0) {
     return (
@@ -117,14 +175,12 @@ export const Quiz: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* ヘッダー */}
       <Header
         courseType={isAssignmentCourse ? 'assignment' : 'free'}
         isQuizAttempt={true}
         onHomeClick={handleHomeClick}
       />
 
-      {/* 中断確認モーダル */}
       <ExitQuizModal
         open={showExitModal}
         onOpenChange={setShowExitModal}
@@ -132,14 +188,12 @@ export const Quiz: React.FC = () => {
       />
 
       <div className="max-w-3xl mx-auto px-4 py-8">
-        {/* コース表示バッジ */}
         {isAssignmentCourse && (
           <div className="mb-4">
             <Badge className="bg-green-600">課題コース</Badge>
           </div>
         )}
 
-        {/* 進捗表示 */}
         <div className="mb-6">
           <div className="flex justify-between items-center mb-2">
             <span className="text-sm">
@@ -150,7 +204,6 @@ export const Quiz: React.FC = () => {
           <Progress value={progress} />
         </div>
 
-        {/* 問題カード */}
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">
@@ -160,40 +213,63 @@ export const Quiz: React.FC = () => {
           <CardContent className="space-y-6">
             <div className="text-lg">{currentQuestion.text}</div>
 
-            <RadioGroup value={selectedAnswer} onValueChange={setSelectedAnswer}>
-              <div className="space-y-3">
-                <div className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-gray-50 cursor-pointer">
-                  <RadioGroupItem value="A" id="A" />
-                  <Label htmlFor="A" className="cursor-pointer flex-1">
-                    A. {currentQuestion.optionA}
-                  </Label>
-                </div>
-                <div className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-gray-50 cursor-pointer">
-                  <RadioGroupItem value="B" id="B" />
-                  <Label htmlFor="B" className="cursor-pointer flex-1">
-                    B. {currentQuestion.optionB}
-                  </Label>
-                </div>
-                <div className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-gray-50 cursor-pointer">
-                  <RadioGroupItem value="C" id="C" />
-                  <Label htmlFor="C" className="cursor-pointer flex-1">
-                    C. {currentQuestion.optionC}
-                  </Label>
-                </div>
-                <div className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-gray-50 cursor-pointer">
-                  <RadioGroupItem value="D" id="D" />
-                  <Label htmlFor="D" className="cursor-pointer flex-1">
-                    D. {currentQuestion.optionD}
-                  </Label>
-                </div>
-                <div className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-gray-50 cursor-pointer">
-                  <RadioGroupItem value="unknown" id="unknown" />
-                  <Label htmlFor="unknown" className="cursor-pointer flex-1">
-                    わからない
-                  </Label>
-                </div>
+            {currentQuestion.answerMethod === 'dropdown' ? (
+              <div className="space-y-2">
+                <Label>回答</Label>
+                <Select value={selectedAnswer || undefined} onValueChange={setSelectedAnswer}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="選択してください" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="A">A. {currentQuestion.optionA}</SelectItem>
+                    <SelectItem value="B">B. {currentQuestion.optionB}</SelectItem>
+                    <SelectItem value="C">C. {currentQuestion.optionC}</SelectItem>
+                    <SelectItem value="D">D. {currentQuestion.optionD}</SelectItem>
+                    <SelectItem value="unknown">わからない</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-            </RadioGroup>
+            ) : (
+              <div className="space-y-3">
+                {(
+                  [
+                    { value: 'A', label: `A. ${currentQuestion.optionA}` },
+                    { value: 'B', label: `B. ${currentQuestion.optionB}` },
+                    { value: 'C', label: `C. ${currentQuestion.optionC}` },
+                    { value: 'D', label: `D. ${currentQuestion.optionD}` },
+                    { value: 'unknown', label: 'わからない' },
+                  ] as const
+                ).map((opt) => {
+                  const id = `answer-${currentQuestion.id}-${opt.value}`;
+                  const checked = selectedAnswer === opt.value;
+                  return (
+                    <div
+                      key={opt.value}
+                      className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-gray-50 cursor-pointer"
+                      onClick={() => setSelectedAnswer(checked ? '' : opt.value)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setSelectedAnswer(checked ? '' : opt.value);
+                        }
+                      }}
+                    >
+                      <Checkbox
+                        id={id}
+                        checked={checked}
+                        onCheckedChange={(next) => setSelectedAnswer(next ? opt.value : '')}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      <Label htmlFor={id} className="cursor-pointer flex-1">
+                        {opt.label}
+                      </Label>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
             <div className="flex flex-col gap-2">
               <Button

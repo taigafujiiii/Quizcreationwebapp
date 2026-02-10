@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -8,36 +8,73 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '../ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import { Header } from '../layout/Header';
-import { mockUnits } from '../../data/mockData';
 import { Unit } from '../../types';
 import { ArrowLeft, Plus, Edit, Trash2 } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import { toast } from 'sonner';
 
 export const UnitsManagement: React.FC = () => {
   const navigate = useNavigate();
-  const [units, setUnits] = useState<Unit[]>(mockUnits);
+  const [units, setUnits] = useState<Unit[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
   const [formData, setFormData] = useState({ name: '', description: '' });
+  const [loading, setLoading] = useState(true);
 
-  const handleSubmit = () => {
-    if (editingUnit) {
-      // 編集
-      setUnits(
-        units.map((u) =>
-          u.id === editingUnit.id ? { ...u, ...formData } : u
-        )
-      );
-    } else {
-      // 新規作成
-      const newUnit: Unit = {
-        id: `u${units.length + 1}`,
-        ...formData,
-      };
-      setUnits([...units, newUnit]);
+  const loadUnits = async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('units')
+      .select('id, name, description')
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      toast.error('単元の取得に失敗しました');
+      setLoading(false);
+      return;
     }
+
+    setUnits(data || []);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    void loadUnits();
+  }, []);
+
+  const handleSubmit = async () => {
+    if (!formData.name.trim()) {
+      toast.error('単元名を入力してください');
+      return;
+    }
+
+    if (editingUnit) {
+      const { error } = await supabase
+        .from('units')
+        .update({ name: formData.name.trim(), description: formData.description.trim() })
+        .eq('id', editingUnit.id);
+
+      if (error) {
+        toast.error('単元の更新に失敗しました');
+        return;
+      }
+      toast.success('単元を更新しました');
+    } else {
+      const { error } = await supabase
+        .from('units')
+        .insert({ name: formData.name.trim(), description: formData.description.trim() });
+
+      if (error) {
+        toast.error('単元の作成に失敗しました');
+        return;
+      }
+      toast.success('単元を作成しました');
+    }
+
     setIsDialogOpen(false);
     setFormData({ name: '', description: '' });
     setEditingUnit(null);
+    await loadUnits();
   };
 
   const handleEdit = (unit: Unit) => {
@@ -46,10 +83,19 @@ export const UnitsManagement: React.FC = () => {
     setIsDialogOpen(true);
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm('この単元を削除してもよろしいですか？')) {
-      setUnits(units.filter((u) => u.id !== id));
+  const handleDelete = async (id: string) => {
+    if (!confirm('この単元を削除してもよろしいですか？')) {
+      return;
     }
+
+    const { error } = await supabase.from('units').delete().eq('id', id);
+    if (error) {
+      toast.error('単元の削除に失敗しました');
+      return;
+    }
+
+    toast.success('単元を削除しました');
+    await loadUnits();
   };
 
   const handleNew = () => {
@@ -60,7 +106,6 @@ export const UnitsManagement: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* ヘッダー */}
       <Header />
 
       <div className="max-w-6xl mx-auto px-4 py-8">
@@ -136,43 +181,47 @@ export const UnitsManagement: React.FC = () => {
             </div>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>単元名</TableHead>
-                  <TableHead>説明</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {units.map((unit) => (
-                  <TableRow key={unit.id}>
-                    <TableCell>{unit.name}</TableCell>
-                    <TableCell className="text-gray-600">
-                      {unit.description}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleEdit(unit)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleDelete(unit.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
+            {loading ? (
+              <div className="py-8 text-center text-gray-500">読み込み中...</div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>単元名</TableHead>
+                    <TableHead>説明</TableHead>
+                    <TableHead className="text-right">操作</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {units.map((unit) => (
+                    <TableRow key={unit.id}>
+                      <TableCell>{unit.name}</TableCell>
+                      <TableCell className="text-gray-600">
+                        {unit.description}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleEdit(unit)}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDelete(unit.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </CardContent>
         </Card>
       </div>

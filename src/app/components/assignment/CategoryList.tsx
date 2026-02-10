@@ -1,36 +1,77 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Header } from '../layout/Header';
-import { mockUnits, mockCategories, mockQuestions } from '../../data/mockData';
+import { Unit, Category, Question } from '../../types';
 import { ArrowLeft, ArrowRight, FolderOpen, AlertCircle } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
 
 export const CategoryList: React.FC = () => {
   const navigate = useNavigate();
   const { unitId } = useParams<{ unitId: string }>();
+  const [unit, setUnit] = useState<Unit | null>(null);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const unit = mockUnits.find((u) => u.id === unitId);
-  const categories = mockCategories.filter((cat) => cat.unitId === unitId);
+  useEffect(() => {
+    const load = async () => {
+      if (!unitId) return;
+      setLoading(true);
+      setError('');
 
-  // カテゴリごとの課題問題数を取得
+      const { data: unitData, error: unitError } = await supabase
+        .from('units')
+        .select('id, name, description')
+        .eq('id', unitId)
+        .maybeSingle();
+
+      const { data: categoryData, error: categoryError } = await supabase
+        .from('categories')
+        .select('id, name, description, unitId:unit_id')
+        .eq('unit_id', unitId)
+        .order('created_at', { ascending: true });
+
+      const categoryIds = (categoryData || []).map((cat) => cat.id);
+
+      const { data: questionData, error: questionError } = await supabase
+        .from('questions')
+        .select('id, categoryId:category_id, answerMethod:answer_method, isAssignment:is_assignment, isActive:is_active')
+        .in('category_id', categoryIds.length ? categoryIds : ['00000000-0000-0000-0000-000000000000'])
+        .eq('is_assignment', true)
+        .eq('is_active', true);
+
+      if (unitError || categoryError || questionError) {
+        setError('データの取得に失敗しました');
+      }
+
+      setUnit(unitData || null);
+      setCategories((categoryData as Category[]) || []);
+      setQuestions((questionData as Question[]) || []);
+      setLoading(false);
+    };
+
+    void load();
+  }, [unitId]);
+
   const getAssignmentCount = (categoryId: string) => {
-    return mockQuestions.filter(
+    return questions.filter(
       (q) => q.categoryId === categoryId && q.isAssignment && q.isActive
     ).length;
   };
 
   const handleCategoryClick = (categoryId: string) => {
     const assignmentCount = getAssignmentCount(categoryId);
-    
+
     if (assignmentCount === 0) {
       alert('このカテゴリには課題がありません');
       return;
     }
 
-    // クイズ画面へ遷移
     navigate('/quiz', {
       state: {
         courseType: 'assignment',
@@ -39,6 +80,17 @@ export const CategoryList: React.FC = () => {
       },
     });
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Header courseType="assignment" />
+        <div className="max-w-6xl mx-auto px-4 py-6 sm:py-8 sm:px-6 lg:px-8 text-center text-gray-500">
+          読み込み中...
+        </div>
+      </div>
+    );
+  }
 
   if (!unit) {
     return (
@@ -58,10 +110,8 @@ export const CategoryList: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* ヘッダー */}
       <Header courseType="assignment" />
 
-      {/* メインコンテンツ */}
       <div className="max-w-6xl mx-auto px-4 py-6 sm:py-8 sm:px-6 lg:px-8">
         <div className="flex items-center gap-4 mb-6">
           <Button variant="outline" onClick={() => navigate('/assignment/units')}>
@@ -76,6 +126,12 @@ export const CategoryList: React.FC = () => {
             カテゴリを選択すると、そのカテゴリの課題問題がすべて出題されます
           </p>
         </div>
+
+        {error && (
+          <Alert className="mb-4" variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
 
         {categories.length === 0 ? (
           <Alert>

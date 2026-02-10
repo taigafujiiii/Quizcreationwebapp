@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
@@ -8,10 +8,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Checkbox } from '../ui/checkbox';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Header } from '../layout/Header';
-import { mockUnits, mockCategories } from '../../data/mockData';
 import { useAuth } from '../../context/AuthContext';
-import { QuizMode } from '../../types';
-import { ArrowLeft, Play, BookOpen, AlertCircle } from 'lucide-react';
+import { QuizMode, Unit, Category } from '../../types';
+import { BookOpen, AlertCircle } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
 
 export const QuizSetup: React.FC = () => {
   const navigate = useNavigate();
@@ -20,35 +20,66 @@ export const QuizSetup: React.FC = () => {
   const [selectedUnit, setSelectedUnit] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
-  const [questionCount, setQuestionCount] = useState(10);
+  const [questionCount, setQuestionCount] = useState('10');
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  // 許可された単元のみフィルタリング
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      setError('');
+      const { data: unitData, error: unitError } = await supabase
+        .from('units')
+        .select('id, name, description')
+        .order('created_at', { ascending: true });
+
+      const { data: categoryData, error: categoryError } = await supabase
+        .from('categories')
+        .select('id, name, description, unitId:unit_id')
+        .order('created_at', { ascending: true });
+
+      if (unitError || categoryError) {
+        setError('データの取得に失敗しました');
+      }
+
+      setUnits(unitData || []);
+      setCategories((categoryData as Category[]) || []);
+      setLoading(false);
+    };
+
+    void load();
+  }, []);
+
   const allowedUnits = useMemo(() => {
     if (!user) return [];
-    
-    // ADMINは全単元
-    if (user.role === 'admin') {
-      return mockUnits;
-    }
-    
-    // USERは許可された単元のみ
-    const allowedUnitIds = user.allowedUnitIds || [];
-    return mockUnits.filter((unit) => allowedUnitIds.includes(unit.id));
-  }, [user]);
 
-  const availableCategories = mockCategories.filter(
+    if (user.role === 'admin') {
+      return units;
+    }
+
+    const allowedUnitIds = user.allowedUnitIds || [];
+    return units.filter((unit) => allowedUnitIds.includes(unit.id));
+  }, [user, units]);
+
+  const availableCategories = categories.filter(
     (cat) => cat.unitId === selectedUnit
   );
 
+  useEffect(() => {
+    setSelectedCategory('');
+    setSelectedCategories([]);
+  }, [selectedUnit]);
+
   const handleStart = () => {
-    // クイズデータを渡して遷移
     navigate('/quiz', {
       state: {
         mode,
         unitId: selectedUnit,
         categoryId: selectedCategory,
         categoryIds: selectedCategories,
-        questionCount: parseInt(questionCount.toString()),
+        questionCount: parseInt(questionCount),
       },
     });
   };
@@ -69,13 +100,28 @@ export const QuizSetup: React.FC = () => {
     return false;
   };
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Header courseType="free" />
+        <div className="max-w-4xl mx-auto px-4 py-8 text-center text-gray-500">
+          読み込み中...
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* ヘッダー */}
       <Header courseType="free" />
 
-      {/* メインコンテンツ */}
       <div className="max-w-4xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+        {error && (
+          <Alert variant="destructive" className="mb-6">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
         {allowedUnits.length === 0 ? (
           <Card className="border-2 border-dashed border-gray-300">
             <CardContent className="flex flex-col items-center justify-center py-12 px-4">
@@ -88,7 +134,8 @@ export const QuizSetup: React.FC = () => {
               <p className="text-gray-600 text-center text-sm sm:text-base max-w-md mb-6">
                 学習できる単元が割り当てられていません。管理者にお問い合わせください。
               </p>
-              <Button variant="outline" onClick={() => navigate('/')}>
+              <Button variant="outline" onClick={() => navigate('/')}
+              >
                 ホームに戻る
               </Button>
             </CardContent>
@@ -105,7 +152,6 @@ export const QuizSetup: React.FC = () => {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* 出題モード選択 */}
               <div className="space-y-3">
                 <Label>出題モード</Label>
                 <RadioGroup value={mode} onValueChange={(v) => setMode(v as QuizMode)}>
@@ -130,7 +176,6 @@ export const QuizSetup: React.FC = () => {
                 </RadioGroup>
               </div>
 
-              {/* 単元指定モード */}
               {mode === 'unit' && (
                 <div className="space-y-2">
                   <Label>単元を選択</Label>
@@ -149,7 +194,6 @@ export const QuizSetup: React.FC = () => {
                 </div>
               )}
 
-              {/* カテゴリ指定モード */}
               {mode === 'category' && (
                 <>
                   <div className="space-y-2">
@@ -190,7 +234,6 @@ export const QuizSetup: React.FC = () => {
                 </>
               )}
 
-              {/* 複数カテゴリ指定モード */}
               {mode === 'multiple' && (
                 <>
                   <div className="space-y-2">
@@ -236,7 +279,6 @@ export const QuizSetup: React.FC = () => {
                 </>
               )}
 
-              {/* 出題数選択 */}
               <div className="space-y-2">
                 <Label>出題数</Label>
                 <Select value={questionCount} onValueChange={setQuestionCount}>

@@ -9,8 +9,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Label } from '../ui/label';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
 import { Header } from '../layout/Header';
-import { mockUsers, mockUnits } from '../../data/mockData';
-import { User } from '../../types';
+import { supabase } from '../../lib/supabase';
+import { adminApi } from '../../lib/adminApi';
+import { User, Unit } from '../../types';
 import { ArrowLeft, Search, MoreVertical, Trash2, AlertTriangle, Edit2, User as UserIcon, BookOpen, X, Mail, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '../ui/utils';
@@ -19,7 +20,9 @@ type RoleFilter = 'all' | 'admin' | 'user';
 
 export const UsersManagement: React.FC = () => {
   const navigate = useNavigate();
-  const [users, setUsers] = useState<User[]>(mockUsers);
+  const [users, setUsers] = useState<User[]>([]);
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [showDeleted, setShowDeleted] = useState(false);
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
@@ -38,8 +41,50 @@ export const UsersManagement: React.FC = () => {
   const [inviteRole, setInviteRole] = useState<'user' | 'admin'>('user');
   const [inviteAllowedUnits, setInviteAllowedUnits] = useState<string[]>([]);
   const [inviteUnitSearchQuery, setInviteUnitSearchQuery] = useState('');
+  const [isInviting, setIsInviting] = useState(false);
+
+  const getErrorMessage = (error: unknown) => {
+    if (error && typeof error === 'object' && 'message' in error && typeof (error as any).message === 'string') {
+      const msg = (error as any).message as string;
+      try {
+        const parsed = JSON.parse(msg);
+        if (parsed && typeof parsed === 'object' && typeof parsed.error === 'string') return parsed.error;
+      } catch {
+        // ignore
+      }
+      return msg;
+    }
+    return '招待メールの送信に失敗しました';
+  };
   
   const menuRef = useRef<HTMLDivElement>(null);
+
+  const loadUsers = async () => {
+    setLoading(true);
+    try {
+      const userData = await adminApi.listUsers();
+      setUsers(userData);
+    } catch (error) {
+      toast.error('ユーザーの取得に失敗しました');
+    }
+
+    const { data: unitData, error: unitError } = await supabase
+      .from('units')
+      .select('id, name, description')
+      .order('created_at', { ascending: true });
+
+    if (unitError) {
+      toast.error('単元の取得に失敗しました');
+    } else {
+      setUnits(unitData || []);
+    }
+
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    void loadUsers();
+  }, []);
 
   // メニュー外クリックで閉じる
   useEffect(() => {
@@ -60,16 +105,16 @@ export const UsersManagement: React.FC = () => {
 
   // フィルタリングされた単元一覧（編集モーダル用）
   const filteredUnits = useMemo(() => {
-    if (!unitSearchQuery) return mockUnits;
-    return mockUnits.filter((unit) =>
+    if (!unitSearchQuery) return units;
+    return units.filter((unit) =>
       unit.name.toLowerCase().includes(unitSearchQuery.toLowerCase())
     );
   }, [unitSearchQuery]);
 
   // フィルタリングされた単元一覧（招待モーダル用）
   const filteredInviteUnits = useMemo(() => {
-    if (!inviteUnitSearchQuery) return mockUnits;
-    return mockUnits.filter((unit) =>
+    if (!inviteUnitSearchQuery) return units;
+    return units.filter((unit) =>
       unit.name.toLowerCase().includes(inviteUnitSearchQuery.toLowerCase())
     );
   }, [inviteUnitSearchQuery]);
@@ -166,22 +211,30 @@ export const UsersManagement: React.FC = () => {
     setInviteAllowedUnits(inviteAllowedUnits.filter((id) => id !== unitId));
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (!userToDelete) return;
 
-    // ユーザーを削除（is_active = false）
-    setUsers(
-      users.map((u) =>
-        u.id === userToDelete.id ? { ...u, isActive: false } : u
-      )
-    );
+    try {
+      const res = await adminApi.deactivateUser(userToDelete.id);
+      if (res.action === 'deactivated') {
+        setUsers((prev) =>
+          prev.map((u) => (u.id === userToDelete.id ? { ...u, isActive: false } : u))
+        );
+        toast.success(`${userToDelete.email} を削除しました`);
+      } else {
+        setUsers((prev) => prev.filter((u) => u.id !== userToDelete.id));
+        toast.success(`${userToDelete.email} を完全に削除しました`);
+      }
+    } catch (_error) {
+      toast.error('ユーザーの削除に失敗しました');
+      return;
+    }
 
-    toast.success(`${userToDelete.email} を削除しました`);
     setDeleteDialogOpen(false);
     setUserToDelete(null);
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!userToEdit) return;
 
     if (!editUsername.trim()) {
@@ -194,20 +247,30 @@ export const UsersManagement: React.FC = () => {
       return;
     }
 
-    // ユーザー情報を更新
-    setUsers(
-      users.map((u) =>
-        u.id === userToEdit.id
-          ? {
-              ...u,
-              username: editUsername.trim(),
-              allowedUnitIds: userToEdit.role === 'user' ? editAllowedUnits : undefined,
-            }
-          : u
-      )
-    );
+    try {
+      await adminApi.updateUser(userToEdit.id, {
+        username: editUsername.trim(),
+        allowedUnitIds: userToEdit.role === 'user' ? editAllowedUnits : [],
+      });
 
-    toast.success('保存しました');
+      setUsers(
+        users.map((u) =>
+          u.id === userToEdit.id
+            ? {
+                ...u,
+                username: editUsername.trim(),
+                allowedUnitIds: userToEdit.role === 'user' ? editAllowedUnits : undefined,
+              }
+            : u
+        )
+      );
+
+      toast.success('保存しました');
+    } catch (_error) {
+      toast.error('保存に失敗しました');
+      return;
+    }
+
     setEditDialogOpen(false);
     setUserToEdit(null);
     setEditUsername('');
@@ -215,6 +278,7 @@ export const UsersManagement: React.FC = () => {
   };
 
   const handleSendInvite = async () => {
+    if (isInviting) return;
     if (!inviteEmail.trim()) {
       toast.error('メールアドレスを入力してください');
       return;
@@ -226,18 +290,25 @@ export const UsersManagement: React.FC = () => {
       return;
     }
 
-    // 招待メール送信処理（モック）
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      
+      setIsInviting(true);
+      await adminApi.inviteUser({
+        email: inviteEmail.trim(),
+        role: inviteRole,
+        allowedUnitIds: inviteRole === 'user' ? inviteAllowedUnits : [],
+      });
+
       toast.success('招待メールを送信しました');
       setInviteDialogOpen(false);
       setInviteEmail('');
       setInviteRole('user');
       setInviteAllowedUnits([]);
       setInviteUnitSearchQuery('');
+      await loadUsers();
     } catch (error) {
-      toast.error('招待メールの送信に失敗しました');
+      toast.error(getErrorMessage(error));
+    } finally {
+      setIsInviting(false);
     }
   };
 
@@ -297,8 +368,19 @@ export const UsersManagement: React.FC = () => {
   };
 
   const getUnitName = (unitId: string) => {
-    return mockUnits.find((u) => u.id === unitId)?.name || unitId;
+    return units.find((u) => u.id === unitId)?.name || unitId;
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Header />
+        <div className="max-w-7xl mx-auto px-4 py-8 text-center text-gray-500">
+          読み込み中...
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -498,6 +580,19 @@ export const UsersManagement: React.FC = () => {
                                 </Button>
                               </div>
                             )}
+                            {user.isActive === false && showDeleted && (
+                              <div className="flex items-center justify-end gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleDeleteClick(user)}
+                                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                >
+                                  <Trash2 className="h-4 w-4 mr-1" />
+                                  完全削除
+                                </Button>
+                              </div>
+                            )}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -541,7 +636,7 @@ export const UsersManagement: React.FC = () => {
                               登録日: {formatDate(user.createdAt)}
                             </p>
                           </div>
-                          {user.isActive !== false && (
+                          {(user.isActive !== false || showDeleted) && (
                             <div className="relative">
                               <Button
                                 variant="ghost"
@@ -555,19 +650,24 @@ export const UsersManagement: React.FC = () => {
                               </Button>
                               {openMenuId === user.id && (
                                 <div className="absolute right-0 mt-1 w-32 bg-white border rounded-lg shadow-lg z-10" ref={menuRef}>
-                                  <button
-                                    onClick={() => handleEditClick(user)}
-                                    className="w-full px-4 py-2 text-sm text-left text-blue-600 hover:bg-blue-50 flex items-center gap-2 rounded-t-lg border-b"
-                                  >
-                                    <Edit2 className="h-4 w-4" />
-                                    編集
-                                  </button>
+                                  {user.isActive !== false && (
+                                    <button
+                                      onClick={() => handleEditClick(user)}
+                                      className="w-full px-4 py-2 text-sm text-left text-blue-600 hover:bg-blue-50 flex items-center gap-2 rounded-t-lg border-b"
+                                    >
+                                      <Edit2 className="h-4 w-4" />
+                                      編集
+                                    </button>
+                                  )}
                                   <button
                                     onClick={() => handleDeleteClick(user)}
-                                    className="w-full px-4 py-2 text-sm text-left text-red-600 hover:bg-red-50 flex items-center gap-2 rounded-b-lg"
+                                    className={cn(
+                                      'w-full px-4 py-2 text-sm text-left text-red-600 hover:bg-red-50 flex items-center gap-2',
+                                      user.isActive !== false ? 'rounded-b-lg' : 'rounded-lg'
+                                    )}
                                   >
                                     <Trash2 className="h-4 w-4" />
-                                    削除
+                                    {user.isActive === false ? '完全削除' : '削除'}
                                   </button>
                                 </div>
                               )}
@@ -695,7 +795,7 @@ export const UsersManagement: React.FC = () => {
                 </div>
 
                 <p className="text-xs text-gray-500">
-                  選択中: {editAllowedUnits.length} / {mockUnits.length} 単元
+                  選択中: {editAllowedUnits.length} / {units.length} 単元
                 </p>
               </div>
             )}
@@ -739,11 +839,23 @@ export const UsersManagement: React.FC = () => {
               <div className="p-2 rounded-full bg-red-100">
                 <AlertTriangle className="h-5 w-5 text-red-600" />
               </div>
-              <DialogTitle>ユーザーを削除しますか？</DialogTitle>
+              <DialogTitle>
+                {userToDelete?.isActive === false ? 'ユーザーを完全に削除しますか？' : 'ユーザーを削除しますか？'}
+              </DialogTitle>
             </div>
             <DialogDescription className="pt-2">
-              <span className="font-medium text-gray-900">{userToDelete?.email}</span> を削除すると、
-              このユーザーは<span className="font-medium">ログインできなくなります</span>。
+              <span className="font-medium text-gray-900">{userToDelete?.email}</span>{' '}
+              {userToDelete?.isActive === false ? (
+                <>
+                  を完全に削除します。<span className="font-medium">この操作は取り消せません</span>。
+                </>
+              ) : (
+                <>
+                  を削除すると、このユーザーは<span className="font-medium">ログインできなくなります</span>。
+                  <br />
+                  もう一度「削除」を実行すると、ユーザー情報が完全に削除されます。
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
           <div className="flex gap-3 pt-4">
@@ -758,7 +870,7 @@ export const UsersManagement: React.FC = () => {
               className="flex-1 bg-red-600 hover:bg-red-700"
               onClick={handleConfirmDelete}
             >
-              削除する
+              {userToDelete?.isActive === false ? '完全に削除する' : '削除する'}
             </Button>
           </div>
         </DialogContent>
@@ -891,7 +1003,7 @@ export const UsersManagement: React.FC = () => {
                 </div>
 
                 <p className="text-xs text-gray-500">
-                  選択中: {inviteAllowedUnits.length} / {mockUnits.length} 単元
+                  選択中: {inviteAllowedUnits.length} / {units.length} 単元
                 </p>
               </div>
             )}
@@ -920,8 +1032,9 @@ export const UsersManagement: React.FC = () => {
             <Button
               className="flex-1"
               onClick={handleSendInvite}
+              disabled={isInviting}
             >
-              招待メールを送信
+              {isInviting ? '送信中...' : '招待メールを送信'}
             </Button>
           </div>
         </DialogContent>

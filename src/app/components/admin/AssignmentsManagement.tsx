@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -14,8 +14,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
 import { ScrollArea, ScrollBar } from '../ui/scroll-area';
 import { Header } from '../layout/Header';
-import { mockQuestions, mockCategories, mockUnits } from '../../data/mockData';
-import { Question } from '../../types';
+import { supabase } from '../../lib/supabase';
+import { parseCsv, toCsv } from '../../lib/csv';
+import { AnswerMethod, Question, Category, Unit } from '../../types';
 import { ArrowLeft, Plus, Trash2, CheckCircle, Edit, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '../ui/utils';
@@ -101,10 +102,43 @@ const CategoryChip: React.FC<CategoryChipProps> = ({
 
 export const AssignmentsManagement: React.FC = () => {
   const navigate = useNavigate();
-  const [questions, setQuestions] = useState<Question[]>(mockQuestions);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
+  const importFileRef = useRef<HTMLInputElement | null>(null);
+  const [importErrors, setImportErrors] = useState<string[]>([]);
+  const [importPreview, setImportPreview] = useState<
+    Array<{
+      rowNumber: number;
+      unitName?: string;
+      categoryName?: string;
+      text: string;
+      correctAnswer: 'A' | 'B' | 'C' | 'D';
+      answerMethod: AnswerMethod;
+      isActive: boolean;
+    }>
+  >([]);
+  const [importPayload, setImportPayload] = useState<
+    Array<{
+      text: string;
+      option_a: string;
+      option_b: string;
+      option_c: string;
+      option_d: string;
+      correct_answer: 'A' | 'B' | 'C' | 'D';
+      answer_method: AnswerMethod;
+      explanation: string;
+      category_id: string;
+      is_active: boolean;
+      is_assignment: true;
+    }>
+  >([]);
+  const [importing, setImporting] = useState(false);
   
   // 単元フィルタ状態（'all' または 単元ID）
   const [selectedUnitId, setSelectedUnitId] = useState<string>('all');
@@ -120,11 +154,130 @@ export const AssignmentsManagement: React.FC = () => {
     optionC: '',
     optionD: '',
     correctAnswer: 'A' as 'A' | 'B' | 'C' | 'D',
+    answerMethod: 'checkbox' as AnswerMethod,
     explanation: '',
     unitId: '',
     categoryId: '',
     isActive: true,
   });
+
+  const normalizeHeader = (s: string) =>
+    s
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '')
+      .replace(/[_-]/g, '');
+
+  const parseActiveValue = (raw: string | undefined, rowNumber: number) => {
+    const v = (raw ?? '').trim();
+    if (!v) return { ok: true as const, value: true };
+
+    const lower = v.toLowerCase();
+    const truthy = new Set(['1', 'true', 't', 'yes', 'y', 'on', '公開', '公開中', 'はい', '○']);
+    const falsy = new Set(['0', 'false', 'f', 'no', 'n', 'off', '非公開', 'いいえ', '×']);
+
+    if (truthy.has(lower) || truthy.has(v)) return { ok: true as const, value: true };
+    if (falsy.has(lower) || falsy.has(v)) return { ok: true as const, value: false };
+
+    return { ok: false as const, error: `行${rowNumber}: 公開(出題対象)の値が不正です (${v})` };
+  };
+
+  const parseAnswerMethodValue = (raw: string | undefined, rowNumber: number) => {
+    const v = (raw ?? '').trim();
+    if (!v) return { ok: true as const, value: 'checkbox' as AnswerMethod };
+
+    const normalized = v.toLowerCase().replace(/\s+/g, '').replace(/[_-]/g, '');
+    const dropdown = new Set(['dropdown', 'select', 'pulldown', 'プルダウン']);
+    const checkbox = new Set(['checkbox', 'check', 'チェックボックス']);
+
+    if (dropdown.has(normalized) || dropdown.has(v)) return { ok: true as const, value: 'dropdown' as AnswerMethod };
+    if (checkbox.has(normalized) || checkbox.has(v)) return { ok: true as const, value: 'checkbox' as AnswerMethod };
+
+    return { ok: false as const, error: `行${rowNumber}: 回答方式は dropdown/checkbox または プルダウン/チェックボックス のいずれかにしてください (${v})` };
+  };
+
+  const resolveUnitId = (unitRaw: string | undefined) => {
+    const v = (unitRaw ?? '').trim();
+    if (!v) {
+      return {
+        ok: true as const,
+        unitId: undefined as string | undefined,
+        unitName: undefined as string | undefined,
+      };
+    }
+
+    // Allow both UUID id and display name.
+    const byId = units.find((u) => u.id === v);
+    if (byId) return { ok: true as const, unitId: byId.id, unitName: byId.name };
+
+    const byName = units.find((u) => u.name === v);
+    if (byName) return { ok: true as const, unitId: byName.id, unitName: byName.name };
+
+    return { ok: false as const, error: `単元が見つかりません (${v})` };
+  };
+
+  const resolveCategoryId = (
+    categoryIdRaw: string | undefined,
+    categoryRaw: string | undefined,
+    unitId: string | undefined
+  ) => {
+    const id = (categoryIdRaw ?? '').trim();
+    if (id) {
+      const exists = categories.some((c) => c.id === id);
+      if (!exists) return { ok: false as const, error: `カテゴリIDが見つかりません (${id})` };
+      const cat = categories.find((c) => c.id === id)!;
+      return { ok: true as const, categoryId: id, categoryName: cat.name };
+    }
+
+    const name = (categoryRaw ?? '').trim();
+    if (!name) return { ok: false as const, error: 'カテゴリが空です' };
+
+    if (unitId) {
+      const cat = categories.find((c) => c.unitId === unitId && c.name === name);
+      if (!cat) return { ok: false as const, error: `指定単元内にカテゴリが見つかりません (${name})` };
+      return { ok: true as const, categoryId: cat.id, categoryName: cat.name };
+    }
+
+    const matches = categories.filter((c) => c.name === name);
+    if (matches.length === 1) return { ok: true as const, categoryId: matches[0].id, categoryName: matches[0].name };
+    if (matches.length === 0) return { ok: false as const, error: `カテゴリが見つかりません (${name})` };
+    return { ok: false as const, error: `カテゴリ名が重複しています。単元も指定してください (${name})` };
+  };
+
+  const loadData = async () => {
+    setLoading(true);
+    const { data: unitData, error: unitError } = await supabase
+      .from('units')
+      .select('id, name, description')
+      .order('created_at', { ascending: true });
+
+    const { data: categoryData, error: categoryError } = await supabase
+      .from('categories')
+      .select('id, name, description, unitId:unit_id')
+      .order('created_at', { ascending: true });
+
+    const { data: questionData, error: questionError } = await supabase
+      .from('questions')
+      .select(
+        'id, text, optionA:option_a, optionB:option_b, optionC:option_c, optionD:option_d, correctAnswer:correct_answer, answerMethod:answer_method, explanation, categoryId:category_id, isActive:is_active, isAssignment:is_assignment'
+      )
+      .order('created_at', { ascending: false });
+
+    if (unitError || categoryError || questionError) {
+      toast.error('データの取得に失敗しました');
+      setLoading(false);
+      return;
+    }
+
+    setUnits(unitData || []);
+    setCategories((categoryData as Category[]) || []);
+    setQuestions((questionData as Question[]) || []);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    void loadData();
+  }, []);
 
   // 単元切替時のハンドラー（カテゴリをリセット）
   const handleUnitChange = (unitId: string) => {
@@ -135,8 +288,8 @@ export const AssignmentsManagement: React.FC = () => {
   // 各単元の課題問題数を計算
   const unitAssignmentCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    mockUnits.forEach((unit) => {
-      const categoriesInUnit = mockCategories
+    units.forEach((unit) => {
+      const categoriesInUnit = categories
         .filter((c) => c.unitId === unit.id)
         .map((c) => c.id);
       const count = questions.filter(
@@ -145,36 +298,36 @@ export const AssignmentsManagement: React.FC = () => {
       counts[unit.id] = count;
     });
     return counts;
-  }, [questions]);
+  }, [questions, categories, units]);
 
   // 選択中の単元に属するカテゴリの課題問題数（全体）
   const totalCategoryAssignmentCount = useMemo(() => {
     if (selectedUnitId === 'all') return 0;
-    const categoriesInUnit = mockCategories
+    const categoriesInUnit = categories
       .filter((c) => c.unitId === selectedUnitId)
       .map((c) => c.id);
     return questions.filter(
       (q) => q.isAssignment && categoriesInUnit.includes(q.categoryId)
     ).length;
-  }, [questions, selectedUnitId]);
+  }, [questions, selectedUnitId, categories]);
 
   // 選択中の単元に属するカテゴリ一覧
   const categoriesInSelectedUnit = useMemo(() => {
     if (selectedUnitId === 'all') return [];
-    return mockCategories.filter((c) => c.unitId === selectedUnitId);
-  }, [selectedUnitId]);
+    return categories.filter((c) => c.unitId === selectedUnitId);
+  }, [selectedUnitId, categories]);
 
   // 各カテゴリの課題問題数を計算
   const categoryAssignmentCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    mockCategories.forEach((category) => {
+    categories.forEach((category) => {
       const count = questions.filter(
         (q) => q.isAssignment && q.categoryId === category.id
       ).length;
       counts[category.id] = count;
     });
     return counts;
-  }, [questions]);
+  }, [questions, categories]);
 
   // 全課題問題数
   const totalAssignmentCount = questions.filter((q) => q.isAssignment).length;
@@ -184,7 +337,7 @@ export const AssignmentsManagement: React.FC = () => {
     let filtered = questions.filter((q) => q.isAssignment);
     
     if (selectedUnitId !== 'all') {
-      const categoriesInUnit = mockCategories
+      const categoriesInUnit = categories
         .filter((c) => c.unitId === selectedUnitId)
         .map((c) => c.id);
       filtered = filtered.filter((q) => categoriesInUnit.includes(q.categoryId));
@@ -203,7 +356,7 @@ export const AssignmentsManagement: React.FC = () => {
     let filtered = questions.filter((q) => !q.isAssignment);
     
     if (selectedUnitId !== 'all') {
-      const categoriesInUnit = mockCategories
+      const categoriesInUnit = categories
         .filter((c) => c.unitId === selectedUnitId)
         .map((c) => c.id);
       filtered = filtered.filter((q) => categoriesInUnit.includes(q.categoryId));
@@ -222,15 +375,24 @@ export const AssignmentsManagement: React.FC = () => {
   };
 
   const getCategoryName = (categoryId: string) => {
-    return mockCategories.find((c) => c.id === categoryId)?.name || '不明';
+    return categories.find((c) => c.id === categoryId)?.name || '不明';
   };
 
   const getUnitName = (categoryId: string) => {
-    const category = mockCategories.find((c) => c.id === categoryId);
-    return mockUnits.find((u) => u.id === category?.unitId)?.name || '不明';
+    const category = categories.find((c) => c.id === categoryId);
+    return units.find((u) => u.id === category?.unitId)?.name || '不明';
   };
 
-  const handleAddToAssignment = (questionId: string) => {
+  const handleAddToAssignment = async (questionId: string) => {
+    const { error } = await supabase
+      .from('questions')
+      .update({ is_assignment: true })
+      .eq('id', questionId);
+    if (error) {
+      toast.error('課題への追加に失敗しました');
+      return;
+    }
+
     setQuestions(
       questions.map((q) =>
         q.id === questionId ? { ...q, isAssignment: true } : q
@@ -239,8 +401,17 @@ export const AssignmentsManagement: React.FC = () => {
     toast.success('問題を課題に追加しました');
   };
 
-  const handleRemoveFromAssignment = (questionId: string) => {
+  const handleRemoveFromAssignment = async (questionId: string) => {
     if (confirm('この問題を課題から外しますか？')) {
+      const { error } = await supabase
+        .from('questions')
+        .update({ is_assignment: false })
+        .eq('id', questionId);
+      if (error) {
+        toast.error('課題から外せませんでした');
+        return;
+      }
+
       setQuestions(
         questions.map((q) =>
           q.id === questionId ? { ...q, isAssignment: false } : q
@@ -250,7 +421,7 @@ export const AssignmentsManagement: React.FC = () => {
     }
   };
 
-  const handleCreateAssignment = () => {
+  const handleCreateAssignment = async () => {
     if (!formData.categoryId) {
       toast.error('カテゴリを選択してください');
       return;
@@ -260,27 +431,41 @@ export const AssignmentsManagement: React.FC = () => {
       return;
     }
 
-    const newQuestion: Question = {
-      id: `q${questions.length + 1}`,
-      text: formData.text,
-      optionA: formData.optionA,
-      optionB: formData.optionB,
-      optionC: formData.optionC,
-      optionD: formData.optionD,
-      correctAnswer: formData.correctAnswer,
-      explanation: formData.explanation,
-      categoryId: formData.categoryId,
-      isActive: formData.isActive,
-      isAssignment: true,
-    };
-    setQuestions([...questions, newQuestion]);
+    const { data, error } = await supabase
+      .from('questions')
+      .insert({
+        text: formData.text,
+        option_a: formData.optionA,
+        option_b: formData.optionB,
+        option_c: formData.optionC,
+        option_d: formData.optionD,
+        correct_answer: formData.correctAnswer,
+        answer_method: formData.answerMethod,
+        explanation: formData.explanation,
+        category_id: formData.categoryId,
+        is_active: formData.isActive,
+        is_assignment: true,
+      })
+      .select(
+        'id, text, optionA:option_a, optionB:option_b, optionC:option_c, optionD:option_d, correctAnswer:correct_answer, answerMethod:answer_method, explanation, categoryId:category_id, isActive:is_active, isAssignment:is_assignment'
+      )
+      .single();
+
+    if (error) {
+      toast.error('課題問題の作成に失敗しました');
+      return;
+    }
+
+    if (data) {
+      setQuestions([data as Question, ...questions]);
+    }
     setIsCreateDialogOpen(false);
     resetForm();
     toast.success('課題問題を作成しました');
   };
 
   const handleEditQuestion = (question: Question) => {
-    const category = mockCategories.find((c) => c.id === question.categoryId);
+    const category = categories.find((c) => c.id === question.categoryId);
     const unitId = category?.unitId || '';
     
     setEditingQuestion(question);
@@ -291,6 +476,7 @@ export const AssignmentsManagement: React.FC = () => {
       optionC: question.optionC,
       optionD: question.optionD,
       correctAnswer: question.correctAnswer,
+      answerMethod: question.answerMethod,
       explanation: question.explanation,
       unitId: unitId,
       categoryId: question.categoryId,
@@ -299,7 +485,7 @@ export const AssignmentsManagement: React.FC = () => {
     setIsEditDialogOpen(true);
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!editingQuestion) return;
     
     if (!formData.categoryId) {
@@ -311,6 +497,27 @@ export const AssignmentsManagement: React.FC = () => {
       return;
     }
 
+    const { error } = await supabase
+      .from('questions')
+      .update({
+        text: formData.text,
+        option_a: formData.optionA,
+        option_b: formData.optionB,
+        option_c: formData.optionC,
+        option_d: formData.optionD,
+        correct_answer: formData.correctAnswer,
+        answer_method: formData.answerMethod,
+        explanation: formData.explanation,
+        category_id: formData.categoryId,
+        is_active: formData.isActive,
+      })
+      .eq('id', editingQuestion.id);
+
+    if (error) {
+      toast.error('問題を更新できませんでした');
+      return;
+    }
+
     const updatedQuestion: Question = {
       ...editingQuestion,
       text: formData.text,
@@ -319,6 +526,7 @@ export const AssignmentsManagement: React.FC = () => {
       optionC: formData.optionC,
       optionD: formData.optionD,
       correctAnswer: formData.correctAnswer,
+      answerMethod: formData.answerMethod,
       explanation: formData.explanation,
       categoryId: formData.categoryId,
       isActive: formData.isActive,
@@ -329,7 +537,7 @@ export const AssignmentsManagement: React.FC = () => {
     );
 
     // 単元が変更されてフィルタ条件外になった場合の通知
-    const newCategory = mockCategories.find((c) => c.id === formData.categoryId);
+    const newCategory = categories.find((c) => c.id === formData.categoryId);
     const newUnitId = newCategory?.unitId;
     if (selectedUnitId !== 'all' && newUnitId !== selectedUnitId) {
       toast.info('問題の単元が変更されたため、一覧から非表示になりました');
@@ -350,6 +558,7 @@ export const AssignmentsManagement: React.FC = () => {
       optionC: '',
       optionD: '',
       correctAnswer: 'A',
+      answerMethod: 'checkbox',
       explanation: '',
       unitId: '',
       categoryId: '',
@@ -357,15 +566,257 @@ export const AssignmentsManagement: React.FC = () => {
     });
   };
 
+  const resetImportState = () => {
+    setImportErrors([]);
+    setImportPreview([]);
+    setImportPayload([]);
+    setImporting(false);
+    if (importFileRef.current) importFileRef.current.value = '';
+  };
+
+  const downloadImportTemplate = () => {
+    const rows = [
+      ['単元', 'カテゴリ', '問題文', '選択肢A', '選択肢B', '選択肢C', '選択肢D', '正解', '回答方式', '解説', '公開'],
+      ['（単元名）', '（カテゴリ名）', '2+2は？', '3', '4', '5', '6', 'B', 'checkbox', '2+2=4', '1'],
+    ];
+    const blob = new Blob([toCsv(rows)], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'assignment_questions_template.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportFile = async (file: File | null) => {
+    resetImportState();
+    if (!file) return;
+
+    const text = await file.text();
+    const rows = parseCsv(text);
+    if (rows.length < 2) {
+      setImportErrors(['CSVにヘッダー行とデータ行が必要です']);
+      return;
+    }
+
+    const header = rows[0].map((c) => c.trim());
+    const keyByHeader: Record<string, string> = {
+      // unit / category
+      単元: 'unit',
+      unit: 'unit',
+      unitid: 'unit',
+      unit_id: 'unit',
+      カテゴリ: 'category',
+      category: 'category',
+      categoryid: 'categoryId',
+      category_id: 'categoryId',
+      // question
+      問題文: 'text',
+      問題: 'text',
+      text: 'text',
+      question: 'text',
+      // options
+      選択肢a: 'optionA',
+      選択肢ａ: 'optionA',
+      optiona: 'optionA',
+      a: 'optionA',
+      選択肢b: 'optionB',
+      選択肢ｂ: 'optionB',
+      optionb: 'optionB',
+      b: 'optionB',
+      選択肢c: 'optionC',
+      選択肢ｃ: 'optionC',
+      optionc: 'optionC',
+      c: 'optionC',
+      選択肢d: 'optionD',
+      選択肢ｄ: 'optionD',
+      optiond: 'optionD',
+      d: 'optionD',
+      // answer/explanation
+      正解: 'correctAnswer',
+      answer: 'correctAnswer',
+      correctanswer: 'correctAnswer',
+      回答方式: 'answerMethod',
+      方式: 'answerMethod',
+      answermethod: 'answerMethod',
+      answer_method: 'answerMethod',
+      解説: 'explanation',
+      explanation: 'explanation',
+      // active
+      公開: 'isActive',
+      出題対象: 'isActive',
+      isactive: 'isActive',
+      active: 'isActive',
+    };
+
+    const colIndex: Partial<Record<string, number>> = {};
+    header.forEach((h, idx) => {
+      const normalized = normalizeHeader(h);
+      const mapped = keyByHeader[normalized] ?? keyByHeader[h] ?? undefined;
+      if (mapped && colIndex[mapped] === undefined) colIndex[mapped] = idx;
+    });
+
+    const getCell = (row: string[], key: string) => {
+      const idx = colIndex[key];
+      if (idx === undefined) return undefined;
+      return row[idx] ?? '';
+    };
+
+    const errors: string[] = [];
+    const payload: typeof importPayload = [];
+    const preview: typeof importPreview = [];
+
+    for (let i = 1; i < rows.length; i++) {
+      const rowNumber = i + 1; // CSV is 1-based, header is line 1
+      const row = rows[i];
+      if (!row || row.every((c) => (c ?? '').trim() === '')) continue;
+
+      const unitRaw = getCell(row, 'unit');
+      const categoryRaw = getCell(row, 'category');
+      const categoryIdRaw = getCell(row, 'categoryId');
+      const textRaw = (getCell(row, 'text') ?? '').trim();
+      const optionA = (getCell(row, 'optionA') ?? '').trim();
+      const optionB = (getCell(row, 'optionB') ?? '').trim();
+      const optionC = (getCell(row, 'optionC') ?? '').trim();
+      const optionD = (getCell(row, 'optionD') ?? '').trim();
+      const correctRaw = (getCell(row, 'correctAnswer') ?? '').trim().toUpperCase();
+      const answerMethodRaw = getCell(row, 'answerMethod');
+      const explanation = (getCell(row, 'explanation') ?? '').trim();
+      const isActiveRaw = getCell(row, 'isActive');
+
+      const unitResolved = resolveUnitId(unitRaw);
+      if (!unitResolved.ok) {
+        errors.push(`行${rowNumber}: ${unitResolved.error}`);
+        continue;
+      }
+
+      // Match existing UI flow: unit + category selection. Allow omitting unit only when categoryId is provided.
+      if (!(categoryIdRaw ?? '').trim() && !(unitRaw ?? '').trim()) {
+        errors.push(`行${rowNumber}: 単元が空です（カテゴリIDを指定する場合は省略できます）`);
+        continue;
+      }
+
+      const categoryResolved = resolveCategoryId(categoryIdRaw, categoryRaw, unitResolved.unitId);
+      if (!categoryResolved.ok) {
+        errors.push(`行${rowNumber}: ${categoryResolved.error}`);
+        continue;
+      }
+
+      if (!textRaw) {
+        errors.push(`行${rowNumber}: 問題文が空です`);
+        continue;
+      }
+      if (!optionA || !optionB || !optionC || !optionD) {
+        errors.push(`行${rowNumber}: 選択肢A-Dはすべて必須です`);
+        continue;
+      }
+      if (!['A', 'B', 'C', 'D'].includes(correctRaw)) {
+        errors.push(`行${rowNumber}: 正解はA/B/C/Dのいずれかにしてください`);
+        continue;
+      }
+
+      const answerMethodParsed = parseAnswerMethodValue(answerMethodRaw, rowNumber);
+      if (!answerMethodParsed.ok) {
+        errors.push(answerMethodParsed.error);
+        continue;
+      }
+
+      const activeParsed = parseActiveValue(isActiveRaw, rowNumber);
+      if (!activeParsed.ok) {
+        errors.push(activeParsed.error);
+        continue;
+      }
+
+      payload.push({
+        text: textRaw,
+        option_a: optionA,
+        option_b: optionB,
+        option_c: optionC,
+        option_d: optionD,
+        correct_answer: correctRaw as 'A' | 'B' | 'C' | 'D',
+        answer_method: answerMethodParsed.value,
+        explanation,
+        category_id: categoryResolved.categoryId,
+        is_active: activeParsed.value,
+        is_assignment: true,
+      });
+
+      if (preview.length < 5) {
+        preview.push({
+          rowNumber,
+          unitName: unitResolved.unitName,
+          categoryName: categoryResolved.categoryName,
+          text: textRaw,
+          correctAnswer: correctRaw as 'A' | 'B' | 'C' | 'D',
+          answerMethod: answerMethodParsed.value,
+          isActive: activeParsed.value,
+        });
+      }
+    }
+
+    if (errors.length > 0) {
+      setImportErrors(errors);
+      setImportPayload([]);
+      setImportPreview([]);
+      return;
+    }
+
+    if (payload.length === 0) {
+      setImportErrors(['取り込み可能なデータ行がありません']);
+      return;
+    }
+
+    setImportErrors([]);
+    setImportPayload(payload);
+    setImportPreview(preview);
+  };
+
+  const handleImportSubmit = async () => {
+    if (importPayload.length === 0) return;
+
+    setImporting(true);
+    const batchSize = 100;
+    try {
+      for (let i = 0; i < importPayload.length; i += batchSize) {
+        const batch = importPayload.slice(i, i + batchSize);
+        const { error } = await supabase.from('questions').insert(batch);
+        if (error) {
+          toast.error('CSVインポートに失敗しました');
+          return;
+        }
+      }
+
+      toast.success(`課題問題を${importPayload.length}件インポートしました`);
+      setIsImportDialogOpen(false);
+      resetImportState();
+      await loadData();
+    } finally {
+      setImporting(false);
+    }
+  };
+
   // 単元選択に応じてカテゴリ候補を絞り込み
   const availableCategories = formData.unitId
-    ? mockCategories.filter((c) => c.unitId === formData.unitId)
-    : mockCategories;
+    ? categories.filter((c) => c.unitId === formData.unitId)
+    : categories;
 
   // カテゴリフィルタ用（既存問題から追加タブ）
   const availableCategoriesForFilter = selectedUnitId !== 'all'
-    ? mockCategories.filter((c) => c.unitId === selectedUnitId)
-    : mockCategories;
+    ? categories.filter((c) => c.unitId === selectedUnitId)
+    : categories;
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Header />
+        <div className="max-w-7xl mx-auto px-4 py-8 text-center text-gray-500">
+          読み込み中...
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -397,7 +848,7 @@ export const AssignmentsManagement: React.FC = () => {
                 isActive={selectedUnitId === 'all'}
                 onClick={() => handleUnitChange('all')}
               />
-              {mockUnits.map((unit) => (
+              {units.map((unit) => (
                 <UnitCard
                   key={unit.id}
                   unitId={unit.id}
@@ -419,7 +870,7 @@ export const AssignmentsManagement: React.FC = () => {
                   isActive={selectedUnitId === 'all'}
                   onClick={() => handleUnitChange('all')}
                 />
-                {mockUnits.map((unit) => (
+                {units.map((unit) => (
                   <UnitCard
                     key={unit.id}
                     unitId={unit.id}
@@ -520,6 +971,132 @@ export const AssignmentsManagement: React.FC = () => {
               <CardHeader>
                 <div className="flex justify-between items-center">
                   <CardTitle>課題問題一覧</CardTitle>
+                  <div className="flex items-center gap-2">
+                    <Dialog
+                      open={isImportDialogOpen}
+                      onOpenChange={(open) => {
+                        setIsImportDialogOpen(open);
+                        if (!open) resetImportState();
+                      }}
+                    >
+                      <DialogTrigger asChild>
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            resetImportState();
+                          }}
+                        >
+                          CSVインポート
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+                        <DialogHeader>
+                          <DialogTitle>CSVインポートで課題問題を作成</DialogTitle>
+                          <DialogDescription>
+                            現行フォームと同じ項目で課題問題を一括作成します。カテゴリは「単元名 + カテゴリ名」または「カテゴリID」で指定できます。
+                          </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="space-y-4 pt-4">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button variant="outline" onClick={downloadImportTemplate}>
+                              テンプレートをダウンロード
+                            </Button>
+                            <div className="text-sm text-gray-600">
+                              必須: 単元, カテゴリ(またはカテゴリID), 問題文, 選択肢A-D, 正解(A/B/C/D) / 任意: 回答方式(空欄はチェックボックス)
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label>CSVファイル</Label>
+                            <Input
+                              ref={importFileRef}
+                              type="file"
+                              accept=".csv,text/csv"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0] ?? null;
+                                void handleImportFile(f);
+                              }}
+                            />
+                            <p className="text-xs text-gray-500">
+                              公開列は `1/0`, `true/false`, `公開/非公開` が使えます。空欄は公開扱いです。
+                            </p>
+                          </div>
+
+                          {importErrors.length > 0 && (
+                            <div className="border rounded-md p-3 bg-red-50">
+                              <div className="font-semibold text-red-700 mb-2">エラー</div>
+                              <ul className="text-sm text-red-700 list-disc pl-5 space-y-1">
+                                {importErrors.slice(0, 20).map((e, idx) => (
+                                  <li key={idx}>{e}</li>
+                                ))}
+                              </ul>
+                              {importErrors.length > 20 && (
+                                <div className="text-xs text-red-700 mt-2">
+                                  ほか {importErrors.length - 20} 件
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {importErrors.length === 0 && importPayload.length > 0 && (
+                            <div className="space-y-2">
+                              <div className="text-sm text-gray-700">
+                                インポート対象: <span className="font-semibold">{importPayload.length}</span> 件
+                              </div>
+                              {importPreview.length > 0 && (
+                                <div className="overflow-x-auto border rounded-md">
+                                  <Table>
+                                    <TableHeader>
+                                      <TableRow>
+                                        <TableHead>行</TableHead>
+                                        <TableHead>単元</TableHead>
+                                        <TableHead>カテゴリ</TableHead>
+                                        <TableHead className="min-w-[200px]">問題文</TableHead>
+                                        <TableHead>正解</TableHead>
+                                        <TableHead>回答方式</TableHead>
+                                        <TableHead>公開</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {importPreview.map((p) => (
+                                        <TableRow key={p.rowNumber}>
+                                          <TableCell>{p.rowNumber}</TableCell>
+                                          <TableCell>{p.unitName ?? '-'}</TableCell>
+                                          <TableCell>{p.categoryName ?? '-'}</TableCell>
+                                          <TableCell className="max-w-md truncate">{p.text}</TableCell>
+                                          <TableCell>{p.correctAnswer}</TableCell>
+                                          <TableCell>{p.answerMethod === 'dropdown' ? 'プルダウン' : 'チェックボックス'}</TableCell>
+                                          <TableCell>{p.isActive ? '公開' : '非公開'}</TableCell>
+                                        </TableRow>
+                                      ))}
+                                    </TableBody>
+                                  </Table>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                setIsImportDialogOpen(false);
+                                resetImportState();
+                              }}
+                            >
+                              キャンセル
+                            </Button>
+                            <Button
+                              disabled={importPayload.length === 0 || importErrors.length > 0 || importing}
+                              onClick={() => void handleImportSubmit()}
+                            >
+                              {importing ? 'インポート中...' : 'インポート'}
+                            </Button>
+                          </div>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
                   <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
                     <DialogTrigger asChild>
                       <Button onClick={resetForm}>
@@ -548,7 +1125,7 @@ export const AssignmentsManagement: React.FC = () => {
                               <SelectValue placeholder="単元を選択" />
                             </SelectTrigger>
                             <SelectContent>
-                              {mockUnits.map((unit) => (
+                              {units.map((unit) => (
                                 <SelectItem key={unit.id} value={unit.id}>
                                   {unit.name}
                                 </SelectItem>
@@ -660,6 +1237,24 @@ export const AssignmentsManagement: React.FC = () => {
                         </div>
 
                         <div className="space-y-2">
+                          <Label>回答方式</Label>
+                          <Select
+                            value={formData.answerMethod}
+                            onValueChange={(value: AnswerMethod) =>
+                              setFormData({ ...formData, answerMethod: value })
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="checkbox">チェックボックス</SelectItem>
+                              <SelectItem value="dropdown">プルダウン</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
                           <Label>解説</Label>
                           <Textarea
                             value={formData.explanation}
@@ -698,6 +1293,7 @@ export const AssignmentsManagement: React.FC = () => {
                       </div>
                     </DialogContent>
                   </Dialog>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
@@ -871,7 +1467,7 @@ export const AssignmentsManagement: React.FC = () => {
                   <SelectValue placeholder="単元を選択" />
                 </SelectTrigger>
                 <SelectContent>
-                  {mockUnits.map((unit) => (
+                  {units.map((unit) => (
                     <SelectItem key={unit.id} value={unit.id}>
                       {unit.name}
                     </SelectItem>
@@ -980,6 +1576,24 @@ export const AssignmentsManagement: React.FC = () => {
                   <Label htmlFor="edit-correct-d">D</Label>
                 </div>
               </RadioGroup>
+            </div>
+
+            <div className="space-y-2">
+              <Label>回答方式</Label>
+              <Select
+                value={formData.answerMethod}
+                onValueChange={(value: AnswerMethod) =>
+                  setFormData({ ...formData, answerMethod: value })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="checkbox">チェックボックス</SelectItem>
+                  <SelectItem value="dropdown">プルダウン</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">
