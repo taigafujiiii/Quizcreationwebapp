@@ -109,7 +109,7 @@ export const UsersManagement: React.FC = () => {
     return units.filter((unit) =>
       unit.name.toLowerCase().includes(unitSearchQuery.toLowerCase())
     );
-  }, [unitSearchQuery]);
+  }, [unitSearchQuery, units]);
 
   // フィルタリングされた単元一覧（招待モーダル用）
   const filteredInviteUnits = useMemo(() => {
@@ -117,7 +117,7 @@ export const UsersManagement: React.FC = () => {
     return units.filter((unit) =>
       unit.name.toLowerCase().includes(inviteUnitSearchQuery.toLowerCase())
     );
-  }, [inviteUnitSearchQuery]);
+  }, [inviteUnitSearchQuery, units]);
 
   // フィルタリングされたユーザー一覧
   const filteredUsers = useMemo(() => {
@@ -781,25 +781,31 @@ export const UsersManagement: React.FC = () => {
 
 	                {/* 単元リスト（チェックボックス） */}
 	                <div className="border rounded-lg max-h-64 overflow-y-auto">
-	                  {filteredUnits.map((unit) => (
-                    <div
-                      key={unit.id}
-                      className="flex items-start gap-3 p-3 hover:bg-gray-50 border-b last:border-b-0 cursor-pointer"
-                      onClick={() => handleToggleEditUnit(unit.id)}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={editAllowedUnits.includes(unit.id)}
-                        onChange={() => handleToggleEditUnit(unit.id)}
-                        className="mt-1 h-4 w-4 rounded border-gray-300"
-                      />
-                      <div className="flex-1">
-                        <p className="font-medium text-sm">{unit.name}</p>
-                        <p className="text-xs text-gray-500">{unit.description}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+	                  {filteredUnits.length === 0 ? (
+	                    <div className="p-3 text-sm text-gray-500">
+	                      該当する単元がありません
+	                    </div>
+	                  ) : (
+	                    filteredUnits.map((unit) => (
+	                      <div
+	                        key={unit.id}
+	                        className="flex items-start gap-3 p-3 hover:bg-gray-50 border-b last:border-b-0 cursor-pointer"
+	                        onClick={() => handleToggleEditUnit(unit.id)}
+	                      >
+	                        <input
+	                          type="checkbox"
+	                          checked={editAllowedUnits.includes(unit.id)}
+	                          onChange={() => handleToggleEditUnit(unit.id)}
+	                          className="mt-1 h-4 w-4 rounded border-gray-300"
+	                        />
+	                        <div className="flex-1">
+	                          <p className="font-medium text-sm">{unit.name}</p>
+	                          <p className="text-xs text-gray-500">{unit.description}</p>
+	                        </div>
+	                      </div>
+	                    ))
+	                  )}
+	                </div>
 
                 <p className="text-xs text-gray-500">
                   選択中: {editAllowedUnits.length} / {units.length} 単元
@@ -996,25 +1002,31 @@ export const UsersManagement: React.FC = () => {
 
 	                {/* 単元リスト（チェックボックス） */}
 	                <div className="border rounded-lg max-h-64 overflow-y-auto">
-	                  {filteredInviteUnits.map((unit) => (
-                    <div
-                      key={unit.id}
-                      className="flex items-start gap-3 p-3 hover:bg-gray-50 border-b last:border-b-0 cursor-pointer"
-                      onClick={() => handleToggleInviteUnit(unit.id)}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={inviteAllowedUnits.includes(unit.id)}
-                        onChange={() => handleToggleInviteUnit(unit.id)}
-                        className="mt-1 h-4 w-4 rounded border-gray-300"
-                      />
-                      <div className="flex-1">
-                        <p className="font-medium text-sm">{unit.name}</p>
-                        <p className="text-xs text-gray-500">{unit.description}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+	                  {filteredInviteUnits.length === 0 ? (
+	                    <div className="p-3 text-sm text-gray-500">
+	                      該当する単元がありません
+	                    </div>
+	                  ) : (
+	                    filteredInviteUnits.map((unit) => (
+	                      <div
+	                        key={unit.id}
+	                        className="flex items-start gap-3 p-3 hover:bg-gray-50 border-b last:border-b-0 cursor-pointer"
+	                        onClick={() => handleToggleInviteUnit(unit.id)}
+	                      >
+	                        <input
+	                          type="checkbox"
+	                          checked={inviteAllowedUnits.includes(unit.id)}
+	                          onChange={() => handleToggleInviteUnit(unit.id)}
+	                          className="mt-1 h-4 w-4 rounded border-gray-300"
+	                        />
+	                        <div className="flex-1">
+	                          <p className="font-medium text-sm">{unit.name}</p>
+	                          <p className="text-xs text-gray-500">{unit.description}</p>
+	                        </div>
+	                      </div>
+	                    ))
+	                  )}
+	                </div>
 
                 <p className="text-xs text-gray-500">
                   選択中: {inviteAllowedUnits.length} / {units.length} 単元
