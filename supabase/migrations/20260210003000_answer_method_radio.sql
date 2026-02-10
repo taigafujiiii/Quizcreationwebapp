@@ -1,10 +1,5 @@
 -- Replace dropdown answer method with radio.
 
--- Update existing rows first so new constraint won't fail.
-update public.questions
-set answer_method = 'radio'
-where answer_method = 'dropdown';
-
 do $$
 declare
   c record;
@@ -20,6 +15,13 @@ begin
     execute format('alter table public.questions drop constraint if exists %I', c.conname);
   end loop;
 
+  -- Update existing rows now that old constraint is removed.
+  execute $sql$
+    update public.questions
+    set answer_method = 'radio'
+    where answer_method = 'dropdown'
+  $sql$;
+
   if not exists (
     select 1
     from pg_constraint
@@ -33,4 +35,3 @@ begin
     $sql$;
   end if;
 end $$;
-
