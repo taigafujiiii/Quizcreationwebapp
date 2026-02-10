@@ -1060,7 +1060,7 @@ export const AssignmentsManagement: React.FC = () => {
                           CSVインポート
                         </Button>
                       </DialogTrigger>
-                      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+                      <DialogContent className="w-[92vw] sm:w-[90vw] lg:w-[80vw] max-w-none max-h-[90vh] overflow-y-auto">
                         <DialogHeader>
                           <DialogTitle>CSVインポートで課題問題を作成</DialogTitle>
                           <DialogDescription>
@@ -1117,13 +1117,13 @@ export const AssignmentsManagement: React.FC = () => {
                               </div>
                               {importPreview.length > 0 && (
                                 <div className="overflow-x-auto border rounded-md">
-                                  <Table>
+                                  <Table className="table-fixed">
                                     <TableHeader>
                                       <TableRow>
-                                        <TableHead>行</TableHead>
-                                        <TableHead>単元</TableHead>
-                                        <TableHead>カテゴリ</TableHead>
-                                        <TableHead className="min-w-[200px]">問題文</TableHead>
+                                        <TableHead className="w-[56px]">行</TableHead>
+                                        <TableHead className="w-[120px] whitespace-normal">単元</TableHead>
+                                        <TableHead className="w-[220px] whitespace-normal">カテゴリ</TableHead>
+                                        <TableHead className="whitespace-normal">問題文</TableHead>
                                         <TableHead>正解</TableHead>
                                         <TableHead>回答方式</TableHead>
                                         <TableHead>公開</TableHead>
@@ -1133,9 +1133,9 @@ export const AssignmentsManagement: React.FC = () => {
                                       {importPreview.map((p) => (
                                         <TableRow key={p.rowNumber}>
                                           <TableCell>{p.rowNumber}</TableCell>
-                                          <TableCell>{p.unitName ?? '-'}</TableCell>
-                                          <TableCell>{p.categoryName ?? '-'}</TableCell>
-                                          <TableCell className="max-w-md truncate">{p.text}</TableCell>
+                                          <TableCell className="whitespace-normal break-words">{p.unitName ?? '-'}</TableCell>
+                                          <TableCell className="whitespace-normal break-words">{p.categoryName ?? '-'}</TableCell>
+                                          <TableCell className="whitespace-normal break-words">{p.text}</TableCell>
                                           <TableCell>{p.correctAnswer}</TableCell>
                                           <TableCell>{p.answerMethod === 'dropdown' ? 'プルダウン' : 'チェックボックス'}</TableCell>
                                           <TableCell>{p.isActive ? '公開' : '非公開'}</TableCell>
