@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Header } from '../layout/Header';
-import { LogOut, BookOpen, FolderOpen, FileQuestion, Mail, ClipboardList, Users } from 'lucide-react';
+import { BookOpen, FolderOpen, FileQuestion, Mail, ClipboardList, Users, Building2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 export const AdminDashboard: React.FC = () => {
@@ -58,6 +58,13 @@ export const AdminDashboard: React.FC = () => {
       icon: Users,
       path: '/admin/users',
       color: 'text-gray-600 bg-gray-50',
+    },
+    {
+      title: '会社管理',
+      description: '会社の登録・削除',
+      icon: Building2,
+      path: '/admin/companies',
+      color: 'text-cyan-600 bg-cyan-50',
     },
   ];
 
@@ -136,14 +143,13 @@ export const AdminDashboard: React.FC = () => {
             <DialogTitle>管理者招待</DialogTitle>
             <DialogDescription>新しい管理者を招待します</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
               <Label htmlFor="email">メールアドレス</Label>
               <Input
                 id="email"
                 value={inviteEmail}
                 onChange={(e) => setInviteEmail(e.target.value)}
-                className="col-span-3"
               />
             </div>
           </div>

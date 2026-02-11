@@ -28,6 +28,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   const isAdmin = user?.role === 'admin';
   const homeRoute = isAdmin ? '/admin' : '/';
+  const displayName = (user?.username || '').trim() || user?.email || '';
 
   const handleLogoClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
@@ -115,15 +116,16 @@ export const Header: React.FC<HeaderProps> = ({
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="gap-2">
                   <User className="h-4 w-4" />
-                  <span className="hidden sm:inline max-w-[150px] truncate">
-                    {user?.email}
+                  <span className="text-xs sm:text-sm break-all whitespace-normal text-left">
+                    {displayName}
                   </span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
                 <div className="px-2 py-1.5 text-sm">
                   <p className="text-xs text-gray-500">ログイン中</p>
-                  <p className="font-medium truncate">{user?.email}</p>
+                  <p className="font-medium break-all whitespace-normal">{displayName}</p>
+                  <p className="text-xs text-gray-500 break-all whitespace-normal mt-0.5">{user?.email}</p>
                   <p className="text-xs text-gray-500 mt-0.5">
                     {isAdmin ? '管理者' : 'ユーザー'}
                   </p>

@@ -8,11 +8,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Label } from '../ui/label';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Header } from '../layout/Header';
 import { supabase } from '../../lib/supabase';
 import { adminApi } from '../../lib/adminApi';
-import { User, Unit } from '../../types';
-import { ArrowLeft, Search, MoreVertical, Trash2, AlertTriangle, Edit2, User as UserIcon, BookOpen, X, Mail, UserPlus } from 'lucide-react';
+import { Company, User, Unit } from '../../types';
+import { ArrowLeft, Search, MoreVertical, Trash2, AlertTriangle, Edit2, User as UserIcon, BookOpen, X, Mail, UserPlus, Building2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '../ui/utils';
 
@@ -22,10 +23,12 @@ export const UsersManagement: React.FC = () => {
   const navigate = useNavigate();
   const [users, setUsers] = useState<User[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [showDeleted, setShowDeleted] = useState(false);
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
+  const [companyFilter, setCompanyFilter] = useState('all');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
@@ -39,6 +42,7 @@ export const UsersManagement: React.FC = () => {
   // 招待フォームの状態
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'user' | 'admin'>('user');
+  const [inviteCompanyId, setInviteCompanyId] = useState('');
   const [inviteAllowedUnits, setInviteAllowedUnits] = useState<string[]>([]);
   const [inviteUnitSearchQuery, setInviteUnitSearchQuery] = useState('');
   const [isInviting, setIsInviting] = useState(false);
@@ -77,6 +81,13 @@ export const UsersManagement: React.FC = () => {
       toast.error('単元の取得に失敗しました');
     } else {
       setUnits(unitData || []);
+    }
+
+    try {
+      const companyData = await adminApi.listCompanies();
+      setCompanies(companyData);
+    } catch (_error) {
+      toast.error('会社一覧の取得に失敗しました');
     }
 
     setLoading(false);
@@ -133,6 +144,10 @@ export const UsersManagement: React.FC = () => {
       result = result.filter((u) => u.role === roleFilter);
     }
 
+    if (companyFilter !== 'all') {
+      result = result.filter((u) => (u.companyId || '') === companyFilter);
+    }
+
     // 検索クエリでフィルタリング
     if (searchQuery) {
       result = result.filter((u) =>
@@ -142,7 +157,7 @@ export const UsersManagement: React.FC = () => {
     }
 
     return result;
-  }, [users, searchQuery, showDeleted, roleFilter]);
+  }, [users, searchQuery, showDeleted, roleFilter, companyFilter]);
 
   // ロール別件数を計算
   const getRoleCount = (role: RoleFilter) => {
@@ -182,6 +197,7 @@ export const UsersManagement: React.FC = () => {
   const handleInviteClick = () => {
     setInviteEmail('');
     setInviteRole('user');
+    setInviteCompanyId('');
     setInviteAllowedUnits([]);
     setInviteUnitSearchQuery('');
     setInviteDialogOpen(true);
@@ -292,12 +308,17 @@ export const UsersManagement: React.FC = () => {
       toast.error('有効なメールアドレスを入力してください');
       return;
     }
+    if (inviteRole === 'user' && !inviteCompanyId) {
+      toast.error('受講生招待には会社選択が必須です');
+      return;
+    }
 
     try {
       setIsInviting(true);
       await adminApi.inviteUser({
         email: inviteEmail.trim(),
         role: inviteRole,
+        companyId: inviteRole === 'user' ? inviteCompanyId : undefined,
         allowedUnitIds: inviteRole === 'user' ? inviteAllowedUnits : [],
       });
 
@@ -305,6 +326,7 @@ export const UsersManagement: React.FC = () => {
       setInviteDialogOpen(false);
       setInviteEmail('');
       setInviteRole('user');
+      setInviteCompanyId('');
       setInviteAllowedUnits([]);
       setInviteUnitSearchQuery('');
       await loadUsers();
@@ -372,6 +394,11 @@ export const UsersManagement: React.FC = () => {
 
   const getUnitName = (unitId: string) => {
     return units.find((u) => u.id === unitId)?.name || unitId;
+  };
+
+  const getCompanyName = (companyId?: string) => {
+    if (!companyId) return '未設定';
+    return companies.find((c) => c.id === companyId)?.name || '未設定';
   };
 
   if (loading) {
@@ -490,6 +517,22 @@ export const UsersManagement: React.FC = () => {
                 />
               </div>
 
+              <div className="w-full sm:w-[260px]">
+                <Select value={companyFilter} onValueChange={setCompanyFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="会社で絞り込み" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全ての会社</SelectItem>
+                    {companies.map((company) => (
+                      <SelectItem key={company.id} value={company.id}>
+                        {company.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               {/* 削除済み表示切替 */}
               <div className="flex items-center gap-2">
                 <input
@@ -520,6 +563,7 @@ export const UsersManagement: React.FC = () => {
                       <TableRow>
                         <TableHead>ユーザー名</TableHead>
                         <TableHead>メールアドレス</TableHead>
+                        <TableHead>会社名</TableHead>
                         <TableHead>ロール</TableHead>
                         <TableHead>学習単元</TableHead>
                         <TableHead>メール認証</TableHead>
@@ -540,6 +584,7 @@ export const UsersManagement: React.FC = () => {
                             )}
                           </TableCell>
                           <TableCell>{user.email}</TableCell>
+                          <TableCell>{user.companyName || getCompanyName(user.companyId)}</TableCell>
                           <TableCell>{getRoleBadge(user.role)}</TableCell>
                           <TableCell>
                             <Badge
@@ -628,6 +673,12 @@ export const UsersManagement: React.FC = () => {
                               {getRoleBadge(user.role)}
                               {getVerifiedBadge(user.verified)}
                               {showDeleted && getStatusBadge(user.isActive)}
+                            </div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <Building2 className="h-3 w-3 text-gray-500" />
+                              <span className="text-sm text-gray-600">
+                                会社: {user.companyName || getCompanyName(user.companyId)}
+                              </span>
                             </div>
                             <div className="flex items-center gap-2 mb-2">
                               <BookOpen className="h-3 w-3 text-gray-500" />
@@ -923,7 +974,13 @@ export const UsersManagement: React.FC = () => {
               <Label>ロール *</Label>
               <RadioGroup
                 value={inviteRole}
-                onValueChange={(value) => setInviteRole(value as 'user' | 'admin')}
+                onValueChange={(value) => {
+                  const next = value as 'user' | 'admin';
+                  setInviteRole(next);
+                  if (next === 'admin') {
+                    setInviteCompanyId('');
+                  }
+                }}
               >
                 <div className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
                   <RadioGroupItem value="user" id="invite-user" />
@@ -951,6 +1008,27 @@ export const UsersManagement: React.FC = () => {
             {/* 学習可能単元（USERのみ） */}
             {inviteRole === 'user' && (
               <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label>会社 *</Label>
+                  <Select value={inviteCompanyId} onValueChange={setInviteCompanyId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="会社を選択してください" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {companies.map((company) => (
+                        <SelectItem key={company.id} value={company.id}>
+                          {company.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {companies.length === 0 && (
+                    <p className="text-xs text-red-600">
+                      会社が未登録です。先に「会社管理」で会社を登録してください。
+                    </p>
+                  )}
+                </div>
+
                 <Label>学習可能単元</Label>
 	                <p className="text-xs text-gray-500">
 	                  このユーザーが学習できる単元を選択してください
@@ -1061,7 +1139,7 @@ export const UsersManagement: React.FC = () => {
             <Button
               className="flex-1"
               onClick={handleSendInvite}
-              disabled={isInviting}
+              disabled={isInviting || (inviteRole === 'user' && !inviteCompanyId)}
             >
               {isInviting ? '送信中...' : '招待メールを送信'}
             </Button>

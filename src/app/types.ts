@@ -9,6 +9,16 @@ export interface User {
   updatedAt?: string; // 更新日時（同時編集の競合検知に使用）
   username?: string; // ユーザー名
   allowedUnitIds?: string[]; // 学習可能な単元ID（USERのみ、ADMINは常に全単元）
+  companyId?: string; // 所属会社ID
+  companyName?: string; // 所属会社名
+}
+
+export interface Company {
+  id: string;
+  name: string;
+  description?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Unit {

@@ -84,6 +84,14 @@ const normalizeAllowedUnitIds = (v: unknown): string[] | null => {
   return uniq;
 };
 
+const normalizeCompanyId = (v: unknown): string | null => {
+  if (v === undefined || v === null) return null;
+  if (typeof v !== "string") return null;
+  const id = v.trim();
+  if (!id) return "";
+  return isUuid(id) ? id : null;
+};
+
 const requireAdmin = async (c: any, next: () => Promise<void>) => {
   const authHeader = c.req.header('Authorization');
   if (!authHeader) {
@@ -122,6 +130,67 @@ app.get("/health", (c) => {
   return c.json({ status: "ok" });
 });
 
+app.get('/admin/companies', requireAdmin, async (c) => {
+  const { data, error } = await adminClient
+    .from('companies')
+    .select('id, name, description, createdAt:created_at, updatedAt:updated_at')
+    .order('name', { ascending: true });
+
+  if (error) {
+    return c.json({ error: error.message }, 500);
+  }
+
+  return c.json(data || []);
+});
+
+app.post('/admin/companies', requireAdmin, async (c) => {
+  const body = await c.req.json();
+  const name = typeof body?.name === 'string' ? body.name.trim() : '';
+  const description = typeof body?.description === 'string' ? body.description.trim() : '';
+
+  if (!name) return c.json({ error: 'Company name is required' }, 400);
+  if (name.length > 100) return c.json({ error: 'Company name is too long' }, 400);
+
+  const { data, error } = await adminClient
+    .from('companies')
+    .insert({ name, description })
+    .select('id, name, description, createdAt:created_at, updatedAt:updated_at')
+    .single();
+
+  if (error) {
+    return c.json({ error: error.message }, 400);
+  }
+
+  return c.json(data);
+});
+
+app.delete('/admin/companies/:id', requireAdmin, async (c) => {
+  const companyId = c.req.param('id');
+  if (!isUuid(companyId)) return c.json({ error: 'Invalid company id' }, 400);
+
+  const { count, error: countError } = await adminClient
+    .from('profiles')
+    .select('id', { count: 'exact', head: true })
+    .eq('company_id', companyId)
+    .eq('is_active', true);
+
+  if (countError) {
+    return c.json({ error: countError.message }, 500);
+  }
+  if ((count || 0) > 0) {
+    return c.json({ error: '会社に所属ユーザーがいるため削除できません' }, 409);
+  }
+
+  const { error } = await adminClient
+    .from('companies')
+    .delete()
+    .eq('id', companyId);
+  if (error) {
+    return c.json({ error: error.message }, 500);
+  }
+  return c.json({ success: true });
+});
+
 app.get('/admin/users', requireAdmin, async (c) => {
   const { data, error } = await adminClient.auth.admin.listUsers({
     page: 1,
@@ -137,11 +206,26 @@ app.get('/admin/users', requireAdmin, async (c) => {
 
   const { data: profiles, error: profileError } = await adminClient
     .from('profiles')
-    .select('id, role, username, allowed_unit_ids, is_active, updated_at')
+    .select('id, role, username, allowed_unit_ids, is_active, updated_at, company_id')
     .in('id', userIds.length ? userIds : ['00000000-0000-0000-0000-000000000000']);
 
   if (profileError) {
     return c.json({ error: profileError.message }, 500);
+  }
+
+  const companyIds = Array.from(
+    new Set((profiles || []).map((p: any) => p.company_id).filter(Boolean))
+  );
+  let companyMap = new Map<string, { id: string; name: string }>();
+  if (companyIds.length > 0) {
+    const { data: companies, error: companyError } = await adminClient
+      .from('companies')
+      .select('id, name')
+      .in('id', companyIds);
+    if (companyError) {
+      return c.json({ error: companyError.message }, 500);
+    }
+    companyMap = new Map((companies || []).map((co: any) => [co.id, co]));
   }
 
   const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
@@ -158,6 +242,8 @@ app.get('/admin/users', requireAdmin, async (c) => {
       updatedAt: profile?.updated_at ?? undefined,
       username: profile?.username || undefined,
       allowedUnitIds: profile?.allowed_unit_ids || [],
+      companyId: profile?.company_id || undefined,
+      companyName: profile?.company_id ? companyMap.get(profile.company_id)?.name : undefined,
     };
   });
 
@@ -170,6 +256,7 @@ app.post('/admin/invite', requireAdmin, async (c) => {
   const emailRaw = body?.email as string | undefined;
   const role = normalizeRole(body?.role) ?? 'user';
   const allowedUnitIds = normalizeAllowedUnitIds(body?.allowedUnitIds) ?? [];
+  const companyId = normalizeCompanyId(body?.companyId);
 
   if (!authUser?.id) {
     return c.json({ error: 'Unauthorized' }, 401);
@@ -177,6 +264,22 @@ app.post('/admin/invite', requireAdmin, async (c) => {
 
   if (!emailRaw) {
     return c.json({ error: 'Email is required' }, 400);
+  }
+  if (body?.companyId !== undefined && companyId === null) {
+    return c.json({ error: 'Invalid companyId' }, 400);
+  }
+  if (role === 'user' && !companyId) {
+    return c.json({ error: '受講生招待には会社選択が必須です' }, 400);
+  }
+  if (companyId) {
+    const { data: companyExists, error: companyError } = await adminClient
+      .from('companies')
+      .select('id')
+      .eq('id', companyId)
+      .maybeSingle();
+    if (companyError || !companyExists) {
+      return c.json({ error: '指定された会社が見つかりません' }, 400);
+    }
   }
 
   const email = emailRaw.trim().toLowerCase();
@@ -279,6 +382,7 @@ app.post('/admin/invite', requireAdmin, async (c) => {
         email,
         role,
         allowed_unit_ids: role === 'admin' ? [] : allowedUnitIds,
+        company_id: role === 'admin' ? null : companyId,
         is_active: true,
       });
 
@@ -315,6 +419,7 @@ app.patch('/admin/users/:id', requireAdmin, async (c) => {
   const role = normalizeRole(body?.role);
   const username = normalizeUsername(body?.username);
   const allowedUnitIds = normalizeAllowedUnitIds(body?.allowedUnitIds);
+  const companyId = normalizeCompanyId(body?.companyId);
   const prevUpdatedAt = typeof body?.updatedAt === "string" ? body.updatedAt : null;
 
   if (body?.role !== undefined && role === null) {
@@ -326,6 +431,9 @@ app.patch('/admin/users/:id', requireAdmin, async (c) => {
   if (body?.allowedUnitIds !== undefined && allowedUnitIds === null) {
     return c.json({ error: 'Invalid allowedUnitIds' }, 400);
   }
+  if (body?.companyId !== undefined && companyId === null) {
+    return c.json({ error: 'Invalid companyId' }, 400);
+  }
 
   // Avoid accidental lock-out by self-demotion in the UI.
   if (authUser?.id && authUser.id === userId && role === 'user') {
@@ -335,11 +443,13 @@ app.patch('/admin/users/:id', requireAdmin, async (c) => {
   const updates: Record<string, unknown> = {};
   if (username !== null) updates.username = username;
   if (allowedUnitIds !== null) updates.allowed_unit_ids = allowedUnitIds;
+  if (companyId !== null) updates.company_id = companyId || null;
   if (role !== null) updates.role = role;
 
   // If promoting to admin, clear allowed units to avoid confusion.
   if (role === 'admin') {
     updates.allowed_unit_ids = [];
+    updates.company_id = null;
   }
 
   if (Object.keys(updates).length === 0) {

@@ -1,5 +1,5 @@
 import { supabase, getFunctionsBaseUrl } from './supabase';
-import type { User } from '../types';
+import type { Company, User } from '../types';
 
 const functionsBaseUrl = getFunctionsBaseUrl();
 const adminFunctionName = (import.meta.env.VITE_SUPABASE_ADMIN_FUNCTION || 'server').trim();
@@ -42,6 +42,7 @@ export const adminApi = {
     email: string;
     role: 'user' | 'admin';
     allowedUnitIds?: string[];
+    companyId?: string;
   }) => {
     return adminFetch<{ success: true }>(
       '/admin/invite',
@@ -64,5 +65,17 @@ export const adminApi = {
       `/admin/users/${userId}/deactivate`,
       { method: 'POST' }
     );
+  },
+  listCompanies: async () => {
+    return adminFetch<Company[]>('/admin/companies', { method: 'GET' });
+  },
+  createCompany: async (payload: { name: string; description?: string }) => {
+    return adminFetch<Company>('/admin/companies', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  deleteCompany: async (companyId: string) => {
+    return adminFetch<{ success: true }>(`/admin/companies/${companyId}`, { method: 'DELETE' });
   },
 };

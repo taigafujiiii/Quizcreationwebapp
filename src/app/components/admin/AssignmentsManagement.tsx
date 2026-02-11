@@ -113,20 +113,23 @@ export const AssignmentsManagement: React.FC = () => {
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
   const importFileRef = useRef<HTMLInputElement | null>(null);
   const [importErrors, setImportErrors] = useState<string[]>([]);
+  type ImportDraftRow = {
+    rowNumber: number;
+    unitRaw?: string;
+    categoryRaw?: string;
+    categoryIdRaw?: string;
+    text: string;
+    option_a: string;
+    option_b: string;
+    option_c: string;
+    option_d: string;
+    correct_answer: string;
+    answer_method: AnswerMethod;
+    explanation: string;
+    is_active: boolean;
+  };
   const [importPayload, setImportPayload] = useState<
-    Array<{
-      text: string;
-      option_a: string;
-      option_b: string;
-      option_c: string;
-      option_d: string;
-      correct_answer: string;
-      answer_method: AnswerMethod;
-      explanation: string;
-      category_id: string;
-      is_active: boolean;
-      is_assignment: true;
-    }>
+    ImportDraftRow[]
   >([]);
   const [importing, setImporting] = useState(false);
   
@@ -245,54 +248,6 @@ export const AssignmentsManagement: React.FC = () => {
     const next = list.includes(choice) ? list.filter((c) => c !== choice) : [...list, choice];
     next.sort();
     setFormData({ ...formData, correctAnswer: next.join(',') });
-  };
-
-  const resolveUnitId = (unitRaw: string | undefined) => {
-    const v = (unitRaw ?? '').trim();
-    if (!v) {
-      return {
-        ok: true as const,
-        unitId: undefined as string | undefined,
-        unitName: undefined as string | undefined,
-      };
-    }
-
-    // Allow both UUID id and display name.
-    const byId = units.find((u) => u.id === v);
-    if (byId) return { ok: true as const, unitId: byId.id, unitName: byId.name };
-
-    const byName = units.find((u) => u.name === v);
-    if (byName) return { ok: true as const, unitId: byName.id, unitName: byName.name };
-
-    return { ok: false as const, error: `単元が見つかりません (${v})` };
-  };
-
-  const resolveCategoryId = (
-    categoryIdRaw: string | undefined,
-    categoryRaw: string | undefined,
-    unitId: string | undefined
-  ) => {
-    const id = (categoryIdRaw ?? '').trim();
-    if (id) {
-      const exists = categories.some((c) => c.id === id);
-      if (!exists) return { ok: false as const, error: `カテゴリIDが見つかりません (${id})` };
-      const cat = categories.find((c) => c.id === id)!;
-      return { ok: true as const, categoryId: id, categoryName: cat.name };
-    }
-
-    const name = (categoryRaw ?? '').trim();
-    if (!name) return { ok: false as const, error: 'カテゴリが空です' };
-
-    if (unitId) {
-      const cat = categories.find((c) => c.unitId === unitId && c.name === name);
-      if (!cat) return { ok: false as const, error: `指定単元内にカテゴリが見つかりません (${name})` };
-      return { ok: true as const, categoryId: cat.id, categoryName: cat.name };
-    }
-
-    const matches = categories.filter((c) => c.name === name);
-    if (matches.length === 1) return { ok: true as const, categoryId: matches[0].id, categoryName: matches[0].name };
-    if (matches.length === 0) return { ok: false as const, error: `カテゴリが見つかりません (${name})` };
-    return { ok: false as const, error: `カテゴリ名が重複しています。単元も指定してください (${name})` };
   };
 
   const loadData = async () => {
@@ -788,21 +743,13 @@ export const AssignmentsManagement: React.FC = () => {
       const explanation = (getCell(row, 'explanation') ?? '').trim();
       const isActiveRaw = getCell(row, 'isActive');
 
-      const unitResolved = resolveUnitId(unitRaw);
-      if (!unitResolved.ok) {
-        errors.push(`行${rowNumber}: ${unitResolved.error}`);
-        continue;
-      }
-
-      // Match existing UI flow: unit + category selection. Allow omitting unit only when categoryId is provided.
+      // categoryIdを使わず名前解決する場合は、単元・カテゴリ名が必須。
       if (!(categoryIdRaw ?? '').trim() && !(unitRaw ?? '').trim()) {
         errors.push(`行${rowNumber}: 単元が空です（カテゴリIDを指定する場合は省略できます）`);
         continue;
       }
-
-      const categoryResolved = resolveCategoryId(categoryIdRaw, categoryRaw, unitResolved.unitId);
-      if (!categoryResolved.ok) {
-        errors.push(`行${rowNumber}: ${categoryResolved.error}`);
+      if (!(categoryIdRaw ?? '').trim() && !(categoryRaw ?? '').trim()) {
+        errors.push(`行${rowNumber}: カテゴリが空です（カテゴリIDを指定する場合は省略できます）`);
         continue;
       }
 
@@ -833,6 +780,10 @@ export const AssignmentsManagement: React.FC = () => {
       }
 
       payload.push({
+        rowNumber,
+        unitRaw,
+        categoryRaw,
+        categoryIdRaw,
         text: textRaw,
         option_a: optionA,
         option_b: optionB,
@@ -841,9 +792,7 @@ export const AssignmentsManagement: React.FC = () => {
         correct_answer: correctParsed.value,
         answer_method: answerMethodParsed.value,
         explanation,
-        category_id: categoryResolved.categoryId,
         is_active: activeParsed.value,
-        is_assignment: true,
       });
     }
 
@@ -868,8 +817,150 @@ export const AssignmentsManagement: React.FC = () => {
     setImporting(true);
     const batchSize = 100;
     try {
-      for (let i = 0; i < importPayload.length; i += batchSize) {
-        const batch = importPayload.slice(i, i + batchSize);
+      const unitById = new Map(units.map((u) => [u.id, u]));
+      const unitIdByName = new Map(units.map((u) => [u.name.trim(), u.id]));
+      const categoryById = new Map(categories.map((c) => [c.id, c]));
+      const categoryIdByUnitAndName = new Map(
+        categories.map((c) => [`${c.unitId}::${c.name.trim()}`, c.id])
+      );
+
+      const ensureUnitId = async (unitRaw: string | undefined, rowNumber: number) => {
+        const v = (unitRaw ?? '').trim();
+        if (!v) return { ok: true as const, unitId: undefined as string | undefined };
+
+        const byId = unitById.get(v);
+        if (byId) return { ok: true as const, unitId: byId.id };
+
+        const byName = unitIdByName.get(v);
+        if (byName) return { ok: true as const, unitId: byName };
+
+        const { data: inserted, error } = await supabase
+          .from('units')
+          .insert({ name: v, description: 'CSVインポートで自動作成' })
+          .select('id, name, description, updatedAt:updated_at')
+          .single();
+
+        if (error || !inserted) {
+          return { ok: false as const, error: `行${rowNumber}: 単元の自動作成に失敗しました (${v})` };
+        }
+
+        const created = inserted as Unit;
+        unitById.set(created.id, created);
+        unitIdByName.set(created.name.trim(), created.id);
+        return { ok: true as const, unitId: created.id };
+      };
+
+      const ensureCategoryId = async (
+        categoryIdRaw: string | undefined,
+        categoryRaw: string | undefined,
+        unitId: string | undefined,
+        rowNumber: number
+      ) => {
+        const id = (categoryIdRaw ?? '').trim();
+        if (id) {
+          const byId = categoryById.get(id);
+          if (byId) return { ok: true as const, categoryId: byId.id };
+
+          const { data, error } = await supabase
+            .from('categories')
+            .select('id, name, description, unitId:unit_id, updatedAt:updated_at')
+            .eq('id', id)
+            .maybeSingle();
+          if (error || !data) {
+            return { ok: false as const, error: `行${rowNumber}: カテゴリIDが見つかりません (${id})` };
+          }
+          const found = data as Category;
+          categoryById.set(found.id, found);
+          categoryIdByUnitAndName.set(`${found.unitId}::${found.name.trim()}`, found.id);
+          return { ok: true as const, categoryId: found.id };
+        }
+
+        const name = (categoryRaw ?? '').trim();
+        if (!name) return { ok: false as const, error: `行${rowNumber}: カテゴリが空です` };
+        if (!unitId) {
+          return { ok: false as const, error: `行${rowNumber}: カテゴリ名で登録する場合は単元が必要です` };
+        }
+
+        const key = `${unitId}::${name}`;
+        const existingId = categoryIdByUnitAndName.get(key);
+        if (existingId) return { ok: true as const, categoryId: existingId };
+
+        const { data: inserted, error } = await supabase
+          .from('categories')
+          .insert({
+            name,
+            description: 'CSVインポートで自動作成',
+            unit_id: unitId,
+          })
+          .select('id, name, description, unitId:unit_id, updatedAt:updated_at')
+          .single();
+
+        if (error || !inserted) {
+          return { ok: false as const, error: `行${rowNumber}: カテゴリの自動作成に失敗しました (${name})` };
+        }
+
+        const created = inserted as Category;
+        categoryById.set(created.id, created);
+        categoryIdByUnitAndName.set(`${created.unitId}::${created.name.trim()}`, created.id);
+        return { ok: true as const, categoryId: created.id };
+      };
+
+      const submitErrors: string[] = [];
+      const resolvedPayload: Array<{
+        text: string;
+        option_a: string;
+        option_b: string;
+        option_c: string;
+        option_d: string;
+        correct_answer: string;
+        answer_method: AnswerMethod;
+        explanation: string;
+        category_id: string;
+        is_active: boolean;
+        is_assignment: true;
+      }> = [];
+
+      for (const draft of importPayload) {
+        const unitResolved = await ensureUnitId(draft.unitRaw, draft.rowNumber);
+        if (!unitResolved.ok) {
+          submitErrors.push(unitResolved.error);
+          continue;
+        }
+
+        const categoryResolved = await ensureCategoryId(
+          draft.categoryIdRaw,
+          draft.categoryRaw,
+          unitResolved.unitId,
+          draft.rowNumber
+        );
+        if (!categoryResolved.ok) {
+          submitErrors.push(categoryResolved.error);
+          continue;
+        }
+
+        resolvedPayload.push({
+          text: draft.text,
+          option_a: draft.option_a,
+          option_b: draft.option_b,
+          option_c: draft.option_c,
+          option_d: draft.option_d,
+          correct_answer: draft.correct_answer,
+          answer_method: draft.answer_method,
+          explanation: draft.explanation,
+          category_id: categoryResolved.categoryId,
+          is_active: draft.is_active,
+          is_assignment: true,
+        });
+      }
+
+      if (submitErrors.length > 0) {
+        setImportErrors(submitErrors);
+        toast.error('CSVの検証に失敗しました');
+        return;
+      }
+
+      for (let i = 0; i < resolvedPayload.length; i += batchSize) {
+        const batch = resolvedPayload.slice(i, i + batchSize);
         const { error } = await supabase.from('questions').insert(batch);
         if (error) {
           toast.error('CSVインポートに失敗しました');
@@ -877,7 +968,7 @@ export const AssignmentsManagement: React.FC = () => {
         }
       }
 
-      toast.success(`課題問題を${importPayload.length}件インポートしました`);
+      toast.success(`課題問題を${resolvedPayload.length}件インポートしました`);
       setIsImportDialogOpen(false);
       resetImportState();
       await loadData();

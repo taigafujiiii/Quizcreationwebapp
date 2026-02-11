@@ -17,6 +17,7 @@ import { CategoriesManagement } from './components/admin/CategoriesManagement';
 import { QuestionsManagement } from './components/admin/QuestionsManagement';
 import { AssignmentsManagement } from './components/admin/AssignmentsManagement';
 import { UsersManagement } from './components/admin/UsersManagement';
+import { CompaniesManagement } from './components/admin/CompaniesManagement';
 import { Toaster } from './components/ui/sonner';
 
 // 認証が必要なルートのラッパー
@@ -168,6 +169,14 @@ const AppRoutes: React.FC = () => {
         element={
           <AdminRoute>
             <UsersManagement />
+          </AdminRoute>
+        }
+      />
+      <Route
+        path="/admin/companies"
+        element={
+          <AdminRoute>
+            <CompaniesManagement />
           </AdminRoute>
         }
       />
