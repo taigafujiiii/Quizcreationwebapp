@@ -40,7 +40,7 @@ export const CategoryList: React.FC = () => {
 
   const getAssignmentCount = (categoryId: string) => {
     return questions.filter(
-      (q) => q.categoryId === categoryId && q.isAssignment && q.isActive
+      (q) => q.categoryId === categoryId && q.isActive
     ).length;
   };
 
