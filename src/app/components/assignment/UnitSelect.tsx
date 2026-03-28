@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Header } from '../layout/Header';
-import { useAuth } from '../../context/AuthContext';
 import { useCompany } from '../../context/CompanyContext';
 import { Unit, Category } from '../../types';
 import { ArrowLeft, ArrowRight, BookOpen, AlertCircle } from 'lucide-react';
@@ -11,7 +10,6 @@ import { supabase } from '../../lib/supabase';
 
 export const UnitSelect: React.FC = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
   const { selectedCompany } = useCompany();
   const [units, setUnits] = useState<Unit[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -45,10 +43,9 @@ export const UnitSelect: React.FC = () => {
   }, []);
 
   const allowedUnits = React.useMemo(() => {
-    if (user?.role === 'admin') return units;
     const allowedUnitIds = selectedCompany?.allowedUnitIds || [];
     return units.filter((unit) => allowedUnitIds.includes(unit.id));
-  }, [user, units, selectedCompany]);
+  }, [units, selectedCompany]);
 
   const getUnitCategoryCount = (unitId: string) => {
     return categories.filter((cat) => cat.unitId === unitId).length;

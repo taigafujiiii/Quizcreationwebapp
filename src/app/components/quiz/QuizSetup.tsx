@@ -8,7 +8,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Checkbox } from '../ui/checkbox';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Header } from '../layout/Header';
-import { useAuth } from '../../context/AuthContext';
 import { useCompany } from '../../context/CompanyContext';
 import { QuizMode, Unit, Category } from '../../types';
 import { BookOpen, AlertCircle } from 'lucide-react';
@@ -16,7 +15,6 @@ import { supabase } from '../../lib/supabase';
 
 export const QuizSetup: React.FC = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
   const { selectedCompany } = useCompany();
   const [mode, setMode] = useState<QuizMode>('unit');
   const [selectedUnit, setSelectedUnit] = useState('');
@@ -55,10 +53,9 @@ export const QuizSetup: React.FC = () => {
   }, []);
 
   const allowedUnits = useMemo(() => {
-    if (user?.role === 'admin') return units;
     const allowedUnitIds = selectedCompany?.allowedUnitIds || [];
     return units.filter((unit) => allowedUnitIds.includes(unit.id));
-  }, [user, units, selectedCompany]);
+  }, [units, selectedCompany]);
 
   const availableCategories = categories.filter(
     (cat) => cat.unitId === selectedUnit
