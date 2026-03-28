@@ -4,6 +4,7 @@ dist
 test-results
 playwright-report
 クイズアプリ
+.claude
 
 # 環境変数（.env.example のみ git 管理）
 .env
