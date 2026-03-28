@@ -166,6 +166,18 @@ app.post('/public/verify-pin', async (c) => {
   });
 });
 
+// Public endpoint: units & categories for student pages (bypasses RLS via service role)
+app.get('/public/quiz-data', async (c) => {
+  const [unitRes, categoryRes] = await Promise.all([
+    adminClient.from('units').select('id, name, description').order('created_at', { ascending: true }),
+    adminClient.from('categories').select('id, name, description, unitId:unit_id').order('created_at', { ascending: true }),
+  ]);
+  if (unitRes.error || categoryRes.error) {
+    return c.json({ error: 'データの取得に失敗しました' }, 500);
+  }
+  return c.json({ units: unitRes.data || [], categories: categoryRes.data || [] });
+});
+
 // Public endpoint: self-registration — invite is sent immediately, no approval required
 app.post('/public/register-request', async (c) => {
   const body = await c.req.json();

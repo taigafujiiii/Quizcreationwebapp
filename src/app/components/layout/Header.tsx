@@ -23,7 +23,8 @@ export const Header: React.FC<HeaderProps> = ({ courseType, onHomeClick }) => {
   const { user, logout } = useAuth();
   const { selectedCompany, clearCompany } = useCompany();
 
-  const isAdmin = user?.role === 'admin';
+  // selectedCompany がある場合は受講生モード優先
+  const isAdmin = user?.role === 'admin' && !selectedCompany;
   const homeRoute = isAdmin ? '/admin' : '/';
 
   const handleLogoClick = () => {

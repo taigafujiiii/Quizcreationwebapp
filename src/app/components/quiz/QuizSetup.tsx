@@ -9,9 +9,9 @@ import { Checkbox } from '../ui/checkbox';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Header } from '../layout/Header';
 import { useCompany } from '../../context/CompanyContext';
+import { publicApi } from '../../lib/adminApi';
 import { QuizMode, Unit, Category } from '../../types';
 import { BookOpen, AlertCircle } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
 
 export const QuizSetup: React.FC = () => {
   const navigate = useNavigate();
@@ -30,23 +30,15 @@ export const QuizSetup: React.FC = () => {
     const load = async () => {
       setLoading(true);
       setError('');
-      const { data: unitData, error: unitError } = await supabase
-        .from('units')
-        .select('id, name, description')
-        .order('created_at', { ascending: true });
-
-      const { data: categoryData, error: categoryError } = await supabase
-        .from('categories')
-        .select('id, name, description, unitId:unit_id')
-        .order('created_at', { ascending: true });
-
-      if (unitError || categoryError) {
+      try {
+        const { units: unitData, categories: categoryData } = await publicApi.getQuizData();
+        setUnits(unitData as Unit[]);
+        setCategories(categoryData as Category[]);
+      } catch {
         setError('データの取得に失敗しました');
+      } finally {
+        setLoading(false);
       }
-
-      setUnits(unitData || []);
-      setCategories((categoryData as Category[]) || []);
-      setLoading(false);
     };
 
     void load();
