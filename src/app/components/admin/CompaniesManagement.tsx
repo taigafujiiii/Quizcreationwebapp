@@ -8,35 +8,48 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
+import { Badge } from '../ui/badge';
 import { adminApi } from '../../lib/adminApi';
-import type { Company } from '../../types';
+import { supabase } from '../../lib/supabase';
+import type { Company, Unit } from '../../types';
 import { toast } from 'sonner';
-import { ArrowLeft, Building2, Plus, Search, Trash2 } from 'lucide-react';
+import { ArrowLeft, Building2, Plus, Search, Trash2, BookOpen, Edit2, X } from 'lucide-react';
+import { cn } from '../ui/utils';
 
 export const CompaniesManagement: React.FC = () => {
   const navigate = useNavigate();
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [units, setUnits] = useState<Unit[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [companyToEdit, setCompanyToEdit] = useState<Company | null>(null);
+  const [editAllowedUnits, setEditAllowedUnits] = useState<string[]>([]);
+  const [unitSearchQuery, setUnitSearchQuery] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [creating, setCreating] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const loadCompanies = async () => {
+  const loadData = async () => {
     setLoading(true);
     try {
-      const data = await adminApi.listCompanies();
-      setCompanies(data);
-    } catch (_error) {
-      toast.error('会社一覧の取得に失敗しました');
+      const [companyData, unitRes] = await Promise.all([
+        adminApi.listCompanies(),
+        supabase.from('units').select('id, name, description').order('created_at', { ascending: true }),
+      ]);
+      setCompanies(companyData);
+      if (!unitRes.error) setUnits(unitRes.data || []);
+    } catch {
+      toast.error('データの取得に失敗しました');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    void loadCompanies();
+    void loadData();
   }, []);
 
   const filteredCompanies = useMemo(() => {
@@ -44,6 +57,12 @@ export const CompaniesManagement: React.FC = () => {
     const q = searchQuery.trim().toLowerCase();
     return companies.filter((c) => c.name.toLowerCase().includes(q));
   }, [companies, searchQuery]);
+
+  const filteredUnits = useMemo(() => {
+    if (!unitSearchQuery.trim()) return units;
+    const q = unitSearchQuery.trim().toLowerCase();
+    return units.filter((u) => u.name.toLowerCase().includes(q));
+  }, [units, unitSearchQuery]);
 
   const handleCreateCompany = async () => {
     if (creating) return;
@@ -80,6 +99,38 @@ export const CompaniesManagement: React.FC = () => {
       const message =
         error && typeof error === 'object' && 'message' in error ? String((error as any).message) : '';
       toast.error(message || '会社の削除に失敗しました');
+    }
+  };
+
+  const openEditDialog = (company: Company) => {
+    setCompanyToEdit(company);
+    setEditAllowedUnits(company.allowedUnitIds || []);
+    setUnitSearchQuery('');
+    setIsEditDialogOpen(true);
+  };
+
+  const toggleUnit = (unitId: string) => {
+    setEditAllowedUnits((prev) =>
+      prev.includes(unitId) ? prev.filter((id) => id !== unitId) : [...prev, unitId]
+    );
+  };
+
+  const handleSaveUnits = async () => {
+    if (!companyToEdit || saving) return;
+    setSaving(true);
+    try {
+      await adminApi.updateCompany(companyToEdit.id, { allowedUnitIds: editAllowedUnits });
+      setCompanies((prev) =>
+        prev.map((c) => c.id === companyToEdit.id ? { ...c, allowedUnitIds: editAllowedUnits } : c)
+      );
+      toast.success('単元割り当てを保存しました');
+      setIsEditDialogOpen(false);
+    } catch (error) {
+      const message =
+        error && typeof error === 'object' && 'message' in error ? String((error as any).message) : '';
+      toast.error(message || '保存に失敗しました');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -167,27 +218,51 @@ export const CompaniesManagement: React.FC = () => {
                     <TableRow>
                       <TableHead>会社名</TableHead>
                       <TableHead>説明</TableHead>
+                      <TableHead>履修単元</TableHead>
                       <TableHead className="text-right">操作</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredCompanies.map((company) => (
-                      <TableRow key={company.id}>
-                        <TableCell className="font-medium">{company.name}</TableCell>
-                        <TableCell className="text-gray-600">{company.description || '-'}</TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => void handleDeleteCompany(company)}
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                          >
-                            <Trash2 className="h-4 w-4 mr-1" />
-                            削除
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {filteredCompanies.map((company) => {
+                      const assignedCount = (company.allowedUnitIds || []).length;
+                      return (
+                        <TableRow key={company.id}>
+                          <TableCell className="font-medium">{company.name}</TableCell>
+                          <TableCell className="text-gray-600">{company.description || '-'}</TableCell>
+                          <TableCell>
+                            {assignedCount === 0 ? (
+                              <span className="text-xs text-gray-400">未設定</span>
+                            ) : (
+                              <Badge variant="outline" className="text-xs">
+                                <BookOpen className="h-3 w-3 mr-1" />
+                                {assignedCount}単元
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex gap-2 justify-end">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => openEditDialog(company)}
+                              >
+                                <Edit2 className="h-4 w-4 mr-1" />
+                                単元設定
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => void handleDeleteCompany(company)}
+                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                              >
+                                <Trash2 className="h-4 w-4 mr-1" />
+                                削除
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>
@@ -195,7 +270,91 @@ export const CompaniesManagement: React.FC = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* 単元割り当てダイアログ */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>履修単元の設定</DialogTitle>
+            <DialogDescription>
+              {companyToEdit?.name} が受講できる単元を設定します。
+              ここで設定した単元は、この会社の受講生全員に適用されます。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                className="pl-10"
+                placeholder="単元名で検索..."
+                value={unitSearchQuery}
+                onChange={(e) => setUnitSearchQuery(e.target.value)}
+              />
+            </div>
+            {editAllowedUnits.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {editAllowedUnits.map((uid) => {
+                  const unit = units.find((u) => u.id === uid);
+                  if (!unit) return null;
+                  return (
+                    <Badge key={uid} variant="secondary" className="text-xs">
+                      {unit.name}
+                      <button
+                        type="button"
+                        onClick={() => toggleUnit(uid)}
+                        className="ml-1 hover:text-red-500"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  );
+                })}
+              </div>
+            )}
+            <div className="border rounded-lg overflow-hidden max-h-64 overflow-y-auto">
+              {filteredUnits.length === 0 ? (
+                <div className="text-center py-6 text-gray-500 text-sm">単元が見つかりません</div>
+              ) : (
+                filteredUnits.map((unit) => {
+                  const selected = editAllowedUnits.includes(unit.id);
+                  return (
+                    <button
+                      key={unit.id}
+                      type="button"
+                      onClick={() => toggleUnit(unit.id)}
+                      className={cn(
+                        'w-full text-left px-4 py-3 text-sm flex items-center gap-3 hover:bg-gray-50 border-b last:border-b-0 transition-colors',
+                        selected && 'bg-blue-50 hover:bg-blue-50'
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          'w-4 h-4 rounded border-2 flex-shrink-0 flex items-center justify-center',
+                          selected ? 'bg-blue-600 border-blue-600' : 'border-gray-300'
+                        )}
+                      >
+                        {selected && <span className="text-white text-xs">✓</span>}
+                      </div>
+                      <span className={cn('flex-1', selected && 'font-medium')}>{unit.name}</span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+            <p className="text-xs text-gray-500">
+              {editAllowedUnits.length} / {units.length} 単元を選択中
+            </p>
+          </div>
+          <div className="flex gap-3">
+            <Button variant="outline" className="flex-1" onClick={() => setIsEditDialogOpen(false)}>
+              キャンセル
+            </Button>
+            <Button className="flex-1" onClick={() => void handleSaveUnits()} disabled={saving}>
+              {saving ? '保存中...' : '保存'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
-

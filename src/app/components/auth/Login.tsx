@@ -176,7 +176,10 @@ export const Login: React.FC = () => {
             </Button>
 
             <div className="text-center text-sm text-gray-600">
-              このサービスは招待制です。招待メールをご確認ください。
+              アカウントをお持ちでない方は{' '}
+              <Link to="/register" className="text-blue-600 hover:underline">
+                登録申請
+              </Link>
             </div>
           </form>
         </CardContent>

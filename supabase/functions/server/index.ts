@@ -130,10 +130,103 @@ app.get("/health", (c) => {
   return c.json({ status: "ok" });
 });
 
+// Public endpoint: company list for registration form (no auth required)
+app.get('/public/companies', async (c) => {
+  const { data, error } = await adminClient
+    .from('companies')
+    .select('id, name')
+    .order('name', { ascending: true });
+
+  if (error) {
+    return c.json({ error: error.message }, 500);
+  }
+
+  return c.json(data || []);
+});
+
+// Public endpoint: self-registration — invite is sent immediately, no approval required
+app.post('/public/register-request', async (c) => {
+  const body = await c.req.json();
+  const emailRaw = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
+  const lastName = typeof body?.lastName === 'string' ? body.lastName.trim() : '';
+  const firstName = typeof body?.firstName === 'string' ? body.firstName.trim() : '';
+  const companyId = normalizeCompanyId(body?.companyId);
+
+  if (!emailRaw) return c.json({ error: 'メールアドレスは必須です' }, 400);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRaw)) return c.json({ error: 'メールアドレスの形式が不正です' }, 400);
+  if (!lastName) return c.json({ error: '姓は必須です' }, 400);
+  if (!firstName) return c.json({ error: '名は必須です' }, 400);
+  if (lastName.length > 50) return c.json({ error: '姓は50文字以内で入力してください' }, 400);
+  if (firstName.length > 50) return c.json({ error: '名は50文字以内で入力してください' }, 400);
+  if (!companyId) return c.json({ error: '会社を選択してください' }, 400);
+
+  // Fetch company and its allowed units
+  const { data: company, error: companyError } = await adminClient
+    .from('companies')
+    .select('id, allowed_unit_ids')
+    .eq('id', companyId)
+    .maybeSingle();
+  if (companyError || !company) return c.json({ error: '指定された会社が見つかりません' }, 400);
+
+  const allowedUnitIds: string[] = company.allowed_unit_ids || [];
+  const username = `${lastName} ${firstName}`;
+
+  // Check for existing active account — stale (soft-deleted) users are cleaned up and re-invited
+  const existingUsersRes = await adminClient.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  if (!existingUsersRes.error) {
+    const existingUser = (existingUsersRes.data.users || []).find(
+      (u) => (u.email || '').trim().toLowerCase() === emailRaw
+    );
+    if (existingUser) {
+      const { data: existingProfile } = await adminClient
+        .from('profiles')
+        .select('is_active')
+        .eq('id', existingUser.id)
+        .maybeSingle();
+      if (existingProfile?.is_active !== false) {
+        return c.json({ error: 'このメールアドレスは既に登録されています' }, 409);
+      }
+      // Soft-deleted user — remove stale auth record so the invite can be re-sent
+      const { error: cleanupError } = await adminClient.auth.admin.deleteUser(existingUser.id);
+      if (cleanupError) {
+        const msg = cleanupError.message.toLowerCase();
+        if (!msg.includes('not found') && !msg.includes('does not exist')) {
+          return c.json({ error: cleanupError.message }, 500);
+        }
+      }
+    }
+  }
+
+  // Send invite email immediately
+  const { data: inviteData, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(
+    emailRaw,
+    inviteRedirectUrl ? { redirectTo: inviteRedirectUrl } : undefined
+  );
+  if (inviteError) return c.json({ error: inviteError.message }, 400);
+
+  const userId = inviteData.user?.id;
+  if (userId) {
+    const { error: profileError } = await adminClient
+      .from('profiles')
+      .upsert({
+        id: userId,
+        email: emailRaw,
+        role: 'user',
+        username,
+        allowed_unit_ids: allowedUnitIds,
+        company_id: companyId,
+        is_active: true,
+      });
+    if (profileError) return c.json({ error: profileError.message }, 500);
+  }
+
+  return c.json({ success: true });
+});
+
 app.get('/admin/companies', requireAdmin, async (c) => {
   const { data, error } = await adminClient
     .from('companies')
-    .select('id, name, description, createdAt:created_at, updatedAt:updated_at')
+    .select('id, name, description, allowedUnitIds:allowed_unit_ids, createdAt:created_at, updatedAt:updated_at')
     .order('name', { ascending: true });
 
   if (error) {
@@ -162,6 +255,34 @@ app.post('/admin/companies', requireAdmin, async (c) => {
   }
 
   return c.json(data);
+});
+
+app.patch('/admin/companies/:id', requireAdmin, async (c) => {
+  const companyId = c.req.param('id');
+  if (!isUuid(companyId)) return c.json({ error: 'Invalid company id' }, 400);
+
+  const body = await c.req.json();
+  const allowedUnitIds = normalizeAllowedUnitIds(body?.allowedUnitIds);
+
+  if (body?.allowedUnitIds !== undefined && allowedUnitIds === null) {
+    return c.json({ error: 'Invalid allowedUnitIds' }, 400);
+  }
+
+  const updates: Record<string, unknown> = {};
+  if (allowedUnitIds !== null) updates.allowed_unit_ids = allowedUnitIds;
+
+  if (Object.keys(updates).length === 0) {
+    return c.json({ error: 'No updates provided' }, 400);
+  }
+
+  const { error } = await adminClient
+    .from('companies')
+    .update(updates)
+    .eq('id', companyId);
+
+  if (error) return c.json({ error: error.message }, 500);
+
+  return c.json({ success: true });
 });
 
 app.delete('/admin/companies/:id', requireAdmin, async (c) => {
@@ -283,6 +404,45 @@ app.post('/admin/invite', requireAdmin, async (c) => {
   }
 
   const email = emailRaw.trim().toLowerCase();
+
+  // Cleanup stale auth users for re-invite flows.
+  // This happens when the same email was previously invited and later deleted in app-side operations.
+  // Keep active users untouched to avoid accidental account takeover.
+  const existingUsersRes = await adminClient.auth.admin.listUsers({
+    page: 1,
+    perPage: 1000,
+  });
+  if (existingUsersRes.error) {
+    return c.json({ error: existingUsersRes.error.message }, 500);
+  }
+  const existingUser = (existingUsersRes.data.users || []).find(
+    (u) => (u.email || '').trim().toLowerCase() === email
+  );
+  if (existingUser) {
+    const { data: existingProfile, error: existingProfileError } = await adminClient
+      .from('profiles')
+      .select('is_active')
+      .eq('id', existingUser.id)
+      .maybeSingle();
+
+    if (existingProfileError) {
+      return c.json({ error: existingProfileError.message }, 500);
+    }
+
+    const hasActiveProfile = existingProfile?.is_active !== false;
+    if (hasActiveProfile) {
+      return c.json({ error: 'このメールアドレスは既に利用されています' }, 409);
+    }
+
+    const { error: cleanupError } = await adminClient.auth.admin.deleteUser(existingUser.id);
+    if (cleanupError) {
+      const msg = cleanupError.message.toLowerCase();
+      const notFound = msg.includes('not found') || msg.includes('does not exist');
+      if (!notFound) {
+        return c.json({ error: cleanupError.message }, 500);
+      }
+    }
+  }
 
   // App-side rate limit (prevents hitting Supabase email rate limits).
   const windowMinutes = 10;
@@ -531,6 +691,166 @@ app.post('/admin/users/:id/deactivate', requireAdmin, async (c) => {
   }
 
   return c.json({ success: true, action: 'deleted' as const });
+});
+
+app.get('/admin/registration-requests', requireAdmin, async (c) => {
+  const status = c.req.query('status') || 'pending';
+  const validStatuses = ['pending', 'approved', 'rejected', 'all'];
+  if (!validStatuses.includes(status)) return c.json({ error: 'Invalid status' }, 400);
+
+  let query = adminClient
+    .from('registration_requests')
+    .select('id, email, last_name, first_name, company_id, status, notes, invited_user_id, reviewed_by, created_at, reviewed_at, companies(name)')
+    .order('created_at', { ascending: false });
+
+  if (status !== 'all') {
+    query = query.eq('status', status);
+  }
+
+  const { data, error } = await query;
+  if (error) return c.json({ error: error.message }, 500);
+
+  return c.json(
+    (data || []).map((r: any) => ({
+      id: r.id,
+      email: r.email,
+      lastName: r.last_name,
+      firstName: r.first_name,
+      companyId: r.company_id,
+      companyName: r.companies?.name,
+      status: r.status,
+      notes: r.notes,
+      invitedUserId: r.invited_user_id,
+      reviewedBy: r.reviewed_by,
+      createdAt: r.created_at,
+      reviewedAt: r.reviewed_at,
+    }))
+  );
+});
+
+app.post('/admin/registration-requests/:id/approve', requireAdmin, async (c) => {
+  const authUser = c.get('authUser') as { id: string } | undefined;
+  const requestId = c.req.param('id');
+
+  if (!isUuid(requestId)) return c.json({ error: 'Invalid request id' }, 400);
+
+  const { data: request, error: requestError } = await adminClient
+    .from('registration_requests')
+    .select('*')
+    .eq('id', requestId)
+    .maybeSingle();
+
+  if (requestError || !request) return c.json({ error: '申請が見つかりません' }, 404);
+  if (request.status !== 'pending') return c.json({ error: 'この申請はすでに処理済みです' }, 409);
+
+  const { data: company, error: companyError } = await adminClient
+    .from('companies')
+    .select('id, allowed_unit_ids')
+    .eq('id', request.company_id)
+    .maybeSingle();
+
+  if (companyError || !company) return c.json({ error: '会社情報が見つかりません' }, 400);
+
+  const allowedUnitIds: string[] = company.allowed_unit_ids || [];
+  const email = request.email as string;
+  const username = `${request.last_name} ${request.first_name}`;
+
+  // Cleanup stale auth users for re-invite
+  const existingUsersRes = await adminClient.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  if (!existingUsersRes.error) {
+    const existingUser = (existingUsersRes.data.users || []).find(
+      (u: any) => (u.email || '').trim().toLowerCase() === email
+    );
+    if (existingUser) {
+      const { data: existingProfile } = await adminClient
+        .from('profiles')
+        .select('is_active')
+        .eq('id', existingUser.id)
+        .maybeSingle();
+
+      if (existingProfile?.is_active !== false) {
+        return c.json({ error: 'このメールアドレスは既に利用されています' }, 409);
+      }
+
+      const { error: cleanupError } = await adminClient.auth.admin.deleteUser(existingUser.id);
+      if (cleanupError) {
+        const msg = cleanupError.message.toLowerCase();
+        if (!msg.includes('not found') && !msg.includes('does not exist')) {
+          return c.json({ error: cleanupError.message }, 500);
+        }
+      }
+    }
+  }
+
+  const { data: inviteData, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(
+    email,
+    inviteRedirectUrl ? { redirectTo: inviteRedirectUrl } : undefined
+  );
+
+  if (inviteError) return c.json({ error: inviteError.message }, 400);
+
+  const userId = inviteData.user?.id;
+  if (userId) {
+    const { error: profileError } = await adminClient
+      .from('profiles')
+      .upsert({
+        id: userId,
+        email,
+        role: 'user',
+        username,
+        allowed_unit_ids: allowedUnitIds,
+        company_id: request.company_id,
+        is_active: true,
+      });
+
+    if (profileError) return c.json({ error: profileError.message }, 500);
+  }
+
+  const { error: updateError } = await adminClient
+    .from('registration_requests')
+    .update({
+      status: 'approved',
+      reviewed_by: authUser?.id ?? null,
+      reviewed_at: new Date().toISOString(),
+      invited_user_id: userId ?? null,
+    })
+    .eq('id', requestId);
+
+  if (updateError) return c.json({ error: updateError.message }, 500);
+
+  return c.json({ success: true });
+});
+
+app.post('/admin/registration-requests/:id/reject', requireAdmin, async (c) => {
+  const authUser = c.get('authUser') as { id: string } | undefined;
+  const requestId = c.req.param('id');
+  const body = await c.req.json().catch(() => ({}));
+  const notes = typeof body?.notes === 'string' ? body.notes.trim() : '';
+
+  if (!isUuid(requestId)) return c.json({ error: 'Invalid request id' }, 400);
+
+  const { data: request, error: requestError } = await adminClient
+    .from('registration_requests')
+    .select('status')
+    .eq('id', requestId)
+    .maybeSingle();
+
+  if (requestError || !request) return c.json({ error: '申請が見つかりません' }, 404);
+  if (request.status !== 'pending') return c.json({ error: 'この申請はすでに処理済みです' }, 409);
+
+  const { error: updateError } = await adminClient
+    .from('registration_requests')
+    .update({
+      status: 'rejected',
+      notes,
+      reviewed_by: authUser?.id ?? null,
+      reviewed_at: new Date().toISOString(),
+    })
+    .eq('id', requestId);
+
+  if (updateError) return c.json({ error: updateError.message }, 500);
+
+  return c.json({ success: true });
 });
 
 const normalizePath = (pathname: string) => {

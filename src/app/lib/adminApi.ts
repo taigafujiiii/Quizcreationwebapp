@@ -1,19 +1,59 @@
 import { supabase, getFunctionsBaseUrl } from './supabase';
-import type { Company, User } from '../types';
+import type { Company, RegistrationRequest, User } from '../types';
 
 const functionsBaseUrl = getFunctionsBaseUrl();
 const adminFunctionName = (import.meta.env.VITE_SUPABASE_ADMIN_FUNCTION || 'server').trim();
 const adminFunctionBasePath = adminFunctionName ? `/${adminFunctionName}` : '';
 const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
 
-const adminFetch = async <T>(path: string, options: RequestInit = {}): Promise<T> => {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const accessToken = sessionData.session?.access_token;
+const publicFetch = async <T>(path: string, options: RequestInit = {}): Promise<T> => {
+  const res = await fetch(`${functionsBaseUrl}${adminFunctionBasePath}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(supabaseAnonKey ? { apikey: supabaseAnonKey } : {}),
+      ...(options.headers || {}),
+    },
+  });
 
-  if (!accessToken) {
-    throw new Error('認証情報がありません。再ログインしてください。');
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `Request failed: ${res.status}`);
   }
 
+  return res.json() as Promise<T>;
+};
+
+export const publicApi = {
+  listCompanies: async () => {
+    return publicFetch<{ id: string; name: string }[]>('/public/companies', { method: 'GET' });
+  },
+  submitRegistrationRequest: async (payload: {
+    email: string;
+    lastName: string;
+    firstName: string;
+    companyId: string;
+  }) => {
+    return publicFetch<{ success: true }>('/public/register-request', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+};
+
+const getAccessToken = async () => {
+  const { data: sessionData } = await supabase.auth.getSession();
+  let accessToken = sessionData.session?.access_token;
+
+  if (!accessToken) {
+    const { data: refreshData } = await supabase.auth.refreshSession();
+    accessToken = refreshData.session?.access_token;
+  }
+
+  return accessToken;
+};
+
+const doFetch = async <T>(path: string, options: RequestInit, accessToken: string): Promise<T> => {
   const requestInit: RequestInit = {
     ...options,
     headers: {
@@ -34,6 +74,29 @@ const adminFetch = async <T>(path: string, options: RequestInit = {}): Promise<T
   return res.json() as Promise<T>;
 };
 
+const adminFetch = async <T>(path: string, options: RequestInit = {}): Promise<T> => {
+  const accessToken = await getAccessToken();
+
+  if (!accessToken) {
+    throw new Error('認証情報がありません。再ログインしてください。');
+  }
+
+  try {
+    return await doFetch<T>(path, options, accessToken);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error || '');
+    const unauthorized = message.includes('401') || message.toLowerCase().includes('unauthorized');
+    if (!unauthorized) throw error;
+
+    const { data: refreshed } = await supabase.auth.refreshSession();
+    const retryToken = refreshed.session?.access_token;
+    if (!retryToken) {
+      throw new Error('セッションの有効期限が切れています。再ログインしてください。');
+    }
+    return doFetch<T>(path, options, retryToken);
+  }
+};
+
 export const adminApi = {
   listUsers: async () => {
     return adminFetch<User[]>('/admin/users', { method: 'GET' });
@@ -52,6 +115,7 @@ export const adminApi = {
   updateUser: async (userId: string, payload: {
     username?: string;
     allowedUnitIds?: string[];
+    companyId?: string;
     role?: 'user' | 'admin';
     updatedAt?: string;
   }) => {
@@ -77,5 +141,23 @@ export const adminApi = {
   },
   deleteCompany: async (companyId: string) => {
     return adminFetch<{ success: true }>(`/admin/companies/${companyId}`, { method: 'DELETE' });
+  },
+  updateCompany: async (companyId: string, payload: { allowedUnitIds?: string[] }) => {
+    return adminFetch<{ success: true }>(`/admin/companies/${companyId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+  listRegistrationRequests: async (status: 'pending' | 'approved' | 'rejected' | 'all' = 'pending') => {
+    return adminFetch<RegistrationRequest[]>(`/admin/registration-requests?status=${status}`, { method: 'GET' });
+  },
+  approveRegistrationRequest: async (requestId: string) => {
+    return adminFetch<{ success: true }>(`/admin/registration-requests/${requestId}/approve`, { method: 'POST' });
+  },
+  rejectRegistrationRequest: async (requestId: string, notes?: string) => {
+    return adminFetch<{ success: true }>(`/admin/registration-requests/${requestId}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ notes: notes || '' }),
+    });
   },
 };

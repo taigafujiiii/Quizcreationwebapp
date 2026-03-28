@@ -89,9 +89,22 @@ const establishSessionFromUrl = async (rawUrl: string) => {
   if (error) throw error;
 };
 
+const classifyInviteStatusFromUrl = (rawUrl: string): InviteStatus | null => {
+  const url = new URL(rawUrl);
+  const hashParams = parseHashParams(url.hash);
+  const errorCode = hashParams.get('error_code') || url.searchParams.get('error_code');
+  const error = hashParams.get('error') || url.searchParams.get('error');
+
+  if (errorCode === 'otp_expired') return 'expired';
+  if (errorCode === 'access_denied') return 'invalid';
+  if (error === 'access_denied') return 'invalid';
+  return null;
+};
+
 export const AcceptInvite: React.FC = () => {
   const navigate = useNavigate();
   const [username, setUsername] = useState('');
+  const [usernameFromProfile, setUsernameFromProfile] = useState(false);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -104,6 +117,12 @@ export const AcceptInvite: React.FC = () => {
   useEffect(() => {
     const init = async () => {
       try {
+        const statusFromUrl = classifyInviteStatusFromUrl(window.location.href);
+        if (statusFromUrl) {
+          setInviteStatus(statusFromUrl);
+          return;
+        }
+
         await supabase.auth.signOut();
         await establishSessionFromUrl(window.location.href);
 
@@ -122,6 +141,7 @@ export const AcceptInvite: React.FC = () => {
 
         if (profile?.username) {
           setUsername(profile.username);
+          setUsernameFromProfile(true);
         }
         setRole((profile?.role as 'admin' | 'user') || 'user');
         setInviteStatus('valid');
@@ -173,6 +193,7 @@ export const AcceptInvite: React.FC = () => {
 
       if (profile?.username) {
         setUsername(profile.username);
+        setUsernameFromProfile(true);
       }
       setRole((profile?.role as 'admin' | 'user') || 'user');
       setInviteStatus('valid');
@@ -226,13 +247,15 @@ export const AcceptInvite: React.FC = () => {
         throw updateAuthError;
       }
 
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .update({ username: username.trim() })
-        .eq('id', userId);
+      if (!usernameFromProfile) {
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update({ username: username.trim() })
+          .eq('id', userId);
 
-      if (profileError) {
-        throw profileError;
+        if (profileError) {
+          throw profileError;
+        }
       }
 
       navigate('/login', { state: { registrationComplete: true } });
@@ -292,7 +315,7 @@ export const AcceptInvite: React.FC = () => {
             <p className="text-gray-600 text-center text-sm max-w-md mb-6">
               {inviteStatus === 'used'
                 ? 'この招待リンクはすでに使用されています。'
-                : '招待リンクが無効です。管理者にお問い合わせください。'}
+                : '招待リンクが無効です。メールクライアントの事前アクセス等で失効することがあります。管理者に再招待を依頼してください。'}
             </p>
             <div className="w-full max-w-sm space-y-3">
               {error && (
@@ -358,25 +381,35 @@ export const AcceptInvite: React.FC = () => {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="username">ユーザー名</Label>
-              <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
-                <Input
-                  id="username"
-                  type="text"
-                  placeholder="例）山田 太郎"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="pl-10"
-                  maxLength={50}
-                  required
-                />
+            {usernameFromProfile ? (
+              <div className="space-y-2">
+                <Label className="text-sm text-gray-600">お名前</Label>
+                <p className="text-sm font-medium flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-md border">
+                  <User className="h-4 w-4 text-gray-500" />
+                  {username}
+                </p>
               </div>
-              <p className="text-xs text-gray-500">
-                {username.length} / 50文字
-              </p>
-            </div>
+            ) : (
+              <div className="space-y-2">
+                <Label htmlFor="username">ユーザー名</Label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+                  <Input
+                    id="username"
+                    type="text"
+                    placeholder="例）山田 太郎"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    className="pl-10"
+                    maxLength={50}
+                    required
+                  />
+                </div>
+                <p className="text-xs text-gray-500">
+                  {username.length} / 50文字
+                </p>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="password">パスワード</Label>

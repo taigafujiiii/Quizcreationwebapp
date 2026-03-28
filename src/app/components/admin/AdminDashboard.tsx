@@ -61,7 +61,7 @@ export const AdminDashboard: React.FC = () => {
     },
     {
       title: '会社管理',
-      description: '会社の登録・削除',
+      description: '会社の登録・単元割り当て・削除',
       icon: Building2,
       path: '/admin/companies',
       color: 'text-cyan-600 bg-cyan-50',

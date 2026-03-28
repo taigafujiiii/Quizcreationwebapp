@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Login } from './components/auth/Login';
 import { AcceptInvite } from './components/auth/AcceptInvite';
+import { Register } from './components/auth/Register';
 import { Verify } from './components/auth/Verify';
 import { Forgot } from './components/auth/Forgot';
 import { Home } from './components/user/Home';
@@ -69,6 +70,7 @@ const AppRoutes: React.FC = () => {
     <Routes>
       {/* 認証ルート */}
       <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<Register />} />
       <Route path="/accept-invite" element={<AcceptInvite />} />
       <Route path="/verify" element={<Verify />} />
       <Route path="/forgot" element={<Forgot />} />

@@ -17,8 +17,26 @@ export interface Company {
   id: string;
   name: string;
   description?: string;
+  allowedUnitIds?: string[];
   createdAt?: string;
   updatedAt?: string;
+}
+
+export type RegistrationRequestStatus = 'pending' | 'approved' | 'rejected';
+
+export interface RegistrationRequest {
+  id: string;
+  email: string;
+  lastName: string;
+  firstName: string;
+  companyId: string;
+  companyName?: string;
+  status: RegistrationRequestStatus;
+  notes?: string;
+  invitedUserId?: string;
+  reviewedBy?: string;
+  createdAt: string;
+  reviewedAt?: string;
 }
 
 export interface Unit {
