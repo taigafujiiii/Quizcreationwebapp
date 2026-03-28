@@ -28,7 +28,7 @@ export const publicApi = {
   listCompanies: async () => {
     return publicFetch<{ id: string; name: string }[]>('/public/companies', { method: 'GET' });
   },
-  verifyPin: async (payload: { companyId: string; pin: string }) => {
+  verifyPin: async (payload: { pin: string }) => {
     return publicFetch<{ id: string; name: string; allowedUnitIds: string[] }>('/public/verify-pin', {
       method: 'POST',
       body: JSON.stringify(payload),

@@ -4,6 +4,7 @@ export interface SelectedCompany {
   id: string;
   name: string;
   allowedUnitIds: string[];
+  studentName: string;
 }
 
 interface CompanyContextType {

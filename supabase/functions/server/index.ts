@@ -144,24 +144,20 @@ app.get('/public/companies', async (c) => {
   return c.json(data || []);
 });
 
-// Public endpoint: PIN verification — 正しければ会社情報（allowedUnitIds含む）を返す
+// Public endpoint: PIN verification — PINだけで会社を特定し、allowedUnitIdsを返す
 app.post('/public/verify-pin', async (c) => {
   const body = await c.req.json();
-  const companyId = normalizeCompanyId(body?.companyId);
   const pin = typeof body?.pin === 'string' ? body.pin.trim() : '';
 
-  if (!companyId) return c.json({ error: '会社を選択してください' }, 400);
   if (!pin) return c.json({ error: 'PINを入力してください' }, 400);
 
   const { data: company, error } = await adminClient
     .from('companies')
-    .select('id, name, allowed_unit_ids, pin')
-    .eq('id', companyId)
+    .select('id, name, allowed_unit_ids')
+    .eq('pin', pin)
     .maybeSingle();
 
-  if (error || !company) return c.json({ error: '会社が見つかりません' }, 400);
-  if (!company.pin) return c.json({ error: 'このサービスはまだご利用いただけません' }, 403);
-  if (company.pin !== pin) return c.json({ error: 'PINが正しくありません' }, 401);
+  if (error || !company) return c.json({ error: 'PINが正しくありません' }, 401);
 
   return c.json({
     id: company.id,

@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
 import { Badge } from '../ui/badge';
-import { LogOut, User, Home, GraduationCap, Building2 } from 'lucide-react';
+import { LogOut, User, Home, GraduationCap } from 'lucide-react';
 
 interface HeaderProps {
   courseType?: 'free' | 'assignment';
@@ -112,12 +112,12 @@ export const Header: React.FC<HeaderProps> = ({ courseType, onHomeClick }) => {
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
-              /* 受講生: 会社名 + 変更ボタン */
+              /* 受講生: 名前 + 退出ボタン */
               selectedCompany && (
                 <div className="flex items-center gap-2">
                   <div className="hidden sm:flex items-center gap-1.5 text-sm text-gray-600">
-                    <Building2 className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                    <span className="font-medium">{selectedCompany.name}</span>
+                    <User className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                    <span className="font-medium">{selectedCompany.studentName || ''}</span>
                   </div>
                   <Button
                     variant="outline"
@@ -125,10 +125,10 @@ export const Header: React.FC<HeaderProps> = ({ courseType, onHomeClick }) => {
                     onClick={handleChangeCompany}
                     className="text-xs"
                   >
-                    <span className="hidden sm:inline">会社を変更</span>
+                    <span className="hidden sm:inline">退出</span>
                     <span className="sm:hidden flex items-center gap-1">
-                      <Building2 className="h-3.5 w-3.5" />
-                      {selectedCompany.name}
+                      <User className="h-3.5 w-3.5" />
+                      {selectedCompany.studentName || ''}
                     </span>
                   </Button>
                 </div>
