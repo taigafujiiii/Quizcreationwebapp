@@ -193,7 +193,6 @@ app.get('/public/unit-categories/:unitId', async (c) => {
     ? await adminClient.from('questions')
         .select('id, categoryId:category_id')
         .in('category_id', categoryIds)
-        .eq('is_assignment', true)
         .eq('is_active', true)
     : { data: [], error: null };
 
@@ -202,6 +201,42 @@ app.get('/public/unit-categories/:unitId', async (c) => {
     categories: categoryRes.data || [],
     questions: questionRes.data || [],
   });
+});
+
+// Public endpoint: fetch questions for student quiz (bypasses RLS, no is_assignment filter)
+// Body: { categoryId? } | { categoryIds? } | { unitId? }
+app.post('/public/questions', async (c) => {
+  const body = await c.req.json();
+  const categoryId: string | undefined = body?.categoryId;
+  const categoryIds: string[] | undefined = body?.categoryIds;
+  const unitId: string | undefined = body?.unitId;
+
+  let targetCategoryIds: string[] = [];
+
+  if (categoryId) {
+    targetCategoryIds = [categoryId];
+  } else if (Array.isArray(categoryIds) && categoryIds.length > 0) {
+    targetCategoryIds = categoryIds;
+  } else if (unitId) {
+    const { data: cats } = await adminClient
+      .from('categories')
+      .select('id')
+      .eq('unit_id', unitId);
+    targetCategoryIds = (cats || []).map((c: { id: string }) => c.id);
+  }
+
+  if (targetCategoryIds.length === 0) {
+    return c.json([]);
+  }
+
+  const { data, error } = await adminClient
+    .from('questions')
+    .select('id, text, optionA:option_a, optionB:option_b, optionC:option_c, optionD:option_d, correctAnswer:correct_answer, answerMethod:answer_method, explanation, categoryId:category_id, isActive:is_active, isAssignment:is_assignment')
+    .in('category_id', targetCategoryIds)
+    .eq('is_active', true);
+
+  if (error) return c.json({ error: error.message }, 500);
+  return c.json(data || []);
 });
 
 // Public endpoint: self-registration — invite is sent immediately, no approval required

@@ -28,6 +28,12 @@ export const publicApi = {
   listCompanies: async () => {
     return publicFetch<{ id: string; name: string }[]>('/public/companies', { method: 'GET' });
   },
+  getQuestions: async (params: { categoryId?: string; categoryIds?: string[]; unitId?: string }) => {
+    return publicFetch<{ id: string; text: string; optionA: string; optionB: string; optionC: string; optionD: string; correctAnswer: string; answerMethod: string; explanation: string; categoryId: string; isActive: boolean; isAssignment: boolean }[]>('/public/questions', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
   getUnitCategories: async (unitId: string) => {
     return publicFetch<{
       unit: { id: string; name: string; description: string };

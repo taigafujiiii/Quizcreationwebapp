@@ -9,9 +9,9 @@ import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
 import { Badge } from '../ui/badge';
 import { Header } from '../layout/Header';
 import { ExitQuizModal } from '../layout/ExitQuizModal';
+import { publicApi } from '../../lib/adminApi';
 import { Choice, Question, QuizAnswer } from '../../types';
 import { AlertCircle } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
 
 export const Quiz: React.FC = () => {
   const location = useLocation();
@@ -34,64 +34,37 @@ export const Quiz: React.FC = () => {
     const loadQuestions = async () => {
       setLoading(true);
       setError('');
+      try {
+        let params: { categoryId?: string; categoryIds?: string[]; unitId?: string } = {};
 
-      let query = supabase
-        .from('questions')
-        .select(
-          'id, text, optionA:option_a, optionB:option_b, optionC:option_c, optionD:option_d, correctAnswer:correct_answer, answerMethod:answer_method, explanation, categoryId:category_id, isActive:is_active, isAssignment:is_assignment'
-        )
-        .eq('is_active', true);
-
-      if (isAssignmentCourse) {
-        if (!categoryId) {
-          setError('カテゴリが選択されていません');
-          setLoading(false);
-          return;
-        }
-        query = query.eq('category_id', categoryId).eq('is_assignment', true);
-      } else {
-        if (mode === 'category') {
-          query = query.eq('category_id', categoryId);
+        if (isAssignmentCourse) {
+          if (!categoryId) {
+            setError('カテゴリが選択されていません');
+            return;
+          }
+          params = { categoryId };
+        } else if (mode === 'category') {
+          params = { categoryId };
         } else if (mode === 'multiple') {
-          if (Array.isArray(categoryIds) && categoryIds.length > 0) {
-            query = query.in('category_id', categoryIds);
-          }
+          params = { categoryIds: Array.isArray(categoryIds) ? categoryIds : [] };
         } else if (mode === 'unit') {
-          if (unitId) {
-            const { data: unitCategories } = await supabase
-              .from('categories')
-              .select('id')
-              .eq('unit_id', unitId);
-            const unitCategoryIds = (unitCategories || []).map((c) => c.id);
-            if (unitCategoryIds.length > 0) {
-              query = query.in('category_id', unitCategoryIds);
-            } else {
-              setQuestions([]);
-              setLoading(false);
-              return;
-            }
-          }
+          params = { unitId };
         }
-      }
 
-      const { data, error: queryError } = await query;
+        let fetched = (await publicApi.getQuestions(params)) as Question[];
 
-      if (queryError) {
+        if (!isAssignmentCourse) {
+          const shuffled = [...fetched].sort(() => Math.random() - 0.5);
+          const count = Number(questionCount) || 10;
+          fetched = shuffled.slice(0, Math.min(count, shuffled.length));
+        }
+
+        setQuestions(fetched);
+      } catch {
         setError('問題の取得に失敗しました');
+      } finally {
         setLoading(false);
-        return;
       }
-
-      let filtered = (data as Question[]) || [];
-
-      if (!isAssignmentCourse) {
-        const shuffled = [...filtered].sort(() => Math.random() - 0.5);
-        const count = Number(questionCount) || 10;
-        filtered = shuffled.slice(0, Math.min(count, shuffled.length));
-      }
-
-      setQuestions(filtered);
-      setLoading(false);
     };
 
     void loadQuestions();
