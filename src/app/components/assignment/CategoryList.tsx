@@ -5,9 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Header } from '../layout/Header';
+import { publicApi } from '../../lib/adminApi';
 import { Unit, Category, Question } from '../../types';
 import { ArrowLeft, ArrowRight, FolderOpen, AlertCircle } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
 
 export const CategoryList: React.FC = () => {
   const navigate = useNavigate();
@@ -23,36 +23,16 @@ export const CategoryList: React.FC = () => {
       if (!unitId) return;
       setLoading(true);
       setError('');
-
-      const { data: unitData, error: unitError } = await supabase
-        .from('units')
-        .select('id, name, description')
-        .eq('id', unitId)
-        .maybeSingle();
-
-      const { data: categoryData, error: categoryError } = await supabase
-        .from('categories')
-        .select('id, name, description, unitId:unit_id')
-        .eq('unit_id', unitId)
-        .order('created_at', { ascending: true });
-
-      const categoryIds = (categoryData || []).map((cat) => cat.id);
-
-      const { data: questionData, error: questionError } = await supabase
-        .from('questions')
-        .select('id, categoryId:category_id, answerMethod:answer_method, isAssignment:is_assignment, isActive:is_active')
-        .in('category_id', categoryIds.length ? categoryIds : ['00000000-0000-0000-0000-000000000000'])
-        .eq('is_assignment', true)
-        .eq('is_active', true);
-
-      if (unitError || categoryError || questionError) {
+      try {
+        const data = await publicApi.getUnitCategories(unitId);
+        setUnit(data.unit as Unit);
+        setCategories(data.categories as Category[]);
+        setQuestions(data.questions as unknown as Question[]);
+      } catch {
         setError('データの取得に失敗しました');
+      } finally {
+        setLoading(false);
       }
-
-      setUnit(unitData || null);
-      setCategories((categoryData as Category[]) || []);
-      setQuestions((questionData as Question[]) || []);
-      setLoading(false);
     };
 
     void load();

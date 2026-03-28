@@ -178,6 +178,32 @@ app.get('/public/quiz-data', async (c) => {
   return c.json({ units: unitRes.data || [], categories: categoryRes.data || [] });
 });
 
+// Public endpoint: categories + question counts for a unit (student category list page)
+app.get('/public/unit-categories/:unitId', async (c) => {
+  const unitId = c.req.param('unitId');
+  const [unitRes, categoryRes] = await Promise.all([
+    adminClient.from('units').select('id, name, description').eq('id', unitId).maybeSingle(),
+    adminClient.from('categories').select('id, name, description, unitId:unit_id').eq('unit_id', unitId).order('created_at', { ascending: true }),
+  ]);
+  if (unitRes.error) return c.json({ error: unitRes.error.message }, 500);
+  if (!unitRes.data) return c.json({ error: '単元が見つかりません' }, 404);
+
+  const categoryIds = (categoryRes.data || []).map((cat: { id: string }) => cat.id);
+  const questionRes = categoryIds.length > 0
+    ? await adminClient.from('questions')
+        .select('id, categoryId:category_id')
+        .in('category_id', categoryIds)
+        .eq('is_assignment', true)
+        .eq('is_active', true)
+    : { data: [], error: null };
+
+  return c.json({
+    unit: unitRes.data,
+    categories: categoryRes.data || [],
+    questions: questionRes.data || [],
+  });
+});
+
 // Public endpoint: self-registration — invite is sent immediately, no approval required
 app.post('/public/register-request', async (c) => {
   const body = await c.req.json();

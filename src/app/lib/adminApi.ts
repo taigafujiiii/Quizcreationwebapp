@@ -28,6 +28,13 @@ export const publicApi = {
   listCompanies: async () => {
     return publicFetch<{ id: string; name: string }[]>('/public/companies', { method: 'GET' });
   },
+  getUnitCategories: async (unitId: string) => {
+    return publicFetch<{
+      unit: { id: string; name: string; description: string };
+      categories: { id: string; name: string; description: string; unitId: string }[];
+      questions: { id: string; categoryId: string }[];
+    }>(`/public/unit-categories/${unitId}`, { method: 'GET' });
+  },
   getQuizData: async () => {
     return publicFetch<{ units: { id: string; name: string; description: string }[]; categories: { id: string; name: string; description: string; unitId: string }[] }>('/public/quiz-data', { method: 'GET' });
   },
