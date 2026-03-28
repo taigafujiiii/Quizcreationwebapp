@@ -13,7 +13,7 @@ import { adminApi } from '../../lib/adminApi';
 import { supabase } from '../../lib/supabase';
 import type { Company, Unit } from '../../types';
 import { toast } from 'sonner';
-import { ArrowLeft, Building2, Plus, Search, Trash2, BookOpen, Edit2, X } from 'lucide-react';
+import { ArrowLeft, Building2, Plus, Search, Trash2, BookOpen, Edit2, X, Loader2 } from 'lucide-react';
 import { cn } from '../ui/utils';
 
 export const CompaniesManagement: React.FC = () => {
@@ -205,7 +205,10 @@ export const CompaniesManagement: React.FC = () => {
           </CardHeader>
           <CardContent>
             {loading ? (
-              <div className="text-center py-8 text-gray-500">読み込み中...</div>
+              <div className="flex flex-col items-center gap-3 py-8 text-gray-500">
+                <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+                <p>読み込み中...</p>
+              </div>
             ) : filteredCompanies.length === 0 ? (
               <div className="text-center py-12 text-gray-500">
                 <Building2 className="h-8 w-8 mx-auto mb-2 text-gray-400" />

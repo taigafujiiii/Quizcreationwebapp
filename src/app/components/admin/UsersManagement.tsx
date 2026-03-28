@@ -13,7 +13,7 @@ import { Header } from '../layout/Header';
 import { supabase } from '../../lib/supabase';
 import { adminApi } from '../../lib/adminApi';
 import { Company, User, Unit } from '../../types';
-import { ArrowLeft, Search, MoreVertical, Trash2, AlertTriangle, Edit2, User as UserIcon, BookOpen, X, Mail, UserPlus, Building2 } from 'lucide-react';
+import { ArrowLeft, Search, MoreVertical, Trash2, AlertTriangle, Edit2, User as UserIcon, BookOpen, X, Mail, UserPlus, Building2, Loader2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '../ui/utils';
 
@@ -25,6 +25,7 @@ export const UsersManagement: React.FC = () => {
   const [units, setUnits] = useState<Unit[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showDeleted, setShowDeleted] = useState(false);
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
@@ -66,29 +67,26 @@ export const UsersManagement: React.FC = () => {
 
   const loadUsers = async () => {
     setLoading(true);
-    try {
-      const userData = await adminApi.listUsers();
-      setUsers(userData);
-    } catch (error) {
-      toast.error('ユーザーの取得に失敗しました');
-    }
+    setLoadError(null);
 
-    const { data: unitData, error: unitError } = await supabase
-      .from('units')
-      .select('id, name, description')
-      .order('created_at', { ascending: true });
+    const [usersResult, unitsResult, companiesResult] = await Promise.allSettled([
+      adminApi.listUsers(),
+      supabase.from('units').select('id, name, description').order('created_at', { ascending: true }),
+      adminApi.listCompanies(),
+    ]);
 
-    if (unitError) {
-      toast.error('単元の取得に失敗しました');
+    if (usersResult.status === 'fulfilled') {
+      setUsers(usersResult.value);
     } else {
-      setUnits(unitData || []);
+      setLoadError('ユーザーの取得に失敗しました。再読み込みをお試しください。');
     }
 
-    try {
-      const companyData = await adminApi.listCompanies();
-      setCompanies(companyData);
-    } catch (_error) {
-      toast.error('会社一覧の取得に失敗しました');
+    if (unitsResult.status === 'fulfilled' && !unitsResult.value.error) {
+      setUnits(unitsResult.value.data || []);
+    }
+
+    if (companiesResult.status === 'fulfilled') {
+      setCompanies(companiesResult.value);
     }
 
     setLoading(false);
@@ -418,8 +416,25 @@ export const UsersManagement: React.FC = () => {
     return (
       <div className="min-h-screen bg-gray-50">
         <Header />
-        <div className="max-w-7xl mx-auto px-4 py-8 text-center text-gray-500">
-          読み込み中...
+        <div className="max-w-7xl mx-auto px-4 py-8 flex flex-col items-center gap-3 text-gray-500">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+          <p>読み込み中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Header />
+        <div className="max-w-7xl mx-auto px-4 py-8 flex flex-col items-center gap-4 text-gray-500">
+          <AlertTriangle className="h-10 w-10 text-red-400" />
+          <p className="text-red-600">{loadError}</p>
+          <Button variant="outline" onClick={() => void loadUsers()}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            再読み込み
+          </Button>
         </div>
       </div>
     );
