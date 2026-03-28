@@ -13,7 +13,7 @@ import { adminApi } from '../../lib/adminApi';
 import { supabase } from '../../lib/supabase';
 import type { Company, Unit } from '../../types';
 import { toast } from 'sonner';
-import { ArrowLeft, Building2, Plus, Search, Trash2, BookOpen, Edit2, X, Loader2 } from 'lucide-react';
+import { ArrowLeft, Building2, Plus, Search, Trash2, BookOpen, Edit2, X, Loader2, KeyRound } from 'lucide-react';
 import { cn } from '../ui/utils';
 
 export const CompaniesManagement: React.FC = () => {
@@ -25,6 +25,7 @@ export const CompaniesManagement: React.FC = () => {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [companyToEdit, setCompanyToEdit] = useState<Company | null>(null);
   const [editAllowedUnits, setEditAllowedUnits] = useState<string[]>([]);
+  const [editPin, setEditPin] = useState('');
   const [unitSearchQuery, setUnitSearchQuery] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [name, setName] = useState('');
@@ -105,6 +106,7 @@ export const CompaniesManagement: React.FC = () => {
   const openEditDialog = (company: Company) => {
     setCompanyToEdit(company);
     setEditAllowedUnits(company.allowedUnitIds || []);
+    setEditPin(company.pin || '');
     setUnitSearchQuery('');
     setIsEditDialogOpen(true);
   };
@@ -118,12 +120,13 @@ export const CompaniesManagement: React.FC = () => {
   const handleSaveUnits = async () => {
     if (!companyToEdit || saving) return;
     setSaving(true);
+    const pinValue = editPin.trim() || null;
     try {
-      await adminApi.updateCompany(companyToEdit.id, { allowedUnitIds: editAllowedUnits });
+      await adminApi.updateCompany(companyToEdit.id, { allowedUnitIds: editAllowedUnits, pin: pinValue });
       setCompanies((prev) =>
-        prev.map((c) => c.id === companyToEdit.id ? { ...c, allowedUnitIds: editAllowedUnits } : c)
+        prev.map((c) => c.id === companyToEdit.id ? { ...c, allowedUnitIds: editAllowedUnits, pin: pinValue ?? undefined } : c)
       );
-      toast.success('単元割り当てを保存しました');
+      toast.success('設定を保存しました');
       setIsEditDialogOpen(false);
     } catch (error) {
       const message =
@@ -220,7 +223,7 @@ export const CompaniesManagement: React.FC = () => {
                   <TableHeader>
                     <TableRow>
                       <TableHead>会社名</TableHead>
-                      <TableHead>説明</TableHead>
+                      <TableHead>PIN</TableHead>
                       <TableHead>履修単元</TableHead>
                       <TableHead className="text-right">操作</TableHead>
                     </TableRow>
@@ -231,7 +234,16 @@ export const CompaniesManagement: React.FC = () => {
                       return (
                         <TableRow key={company.id}>
                           <TableCell className="font-medium">{company.name}</TableCell>
-                          <TableCell className="text-gray-600">{company.description || '-'}</TableCell>
+                          <TableCell>
+                            {company.pin ? (
+                              <Badge variant="outline" className="text-xs font-mono">
+                                <KeyRound className="h-3 w-3 mr-1" />
+                                {company.pin}
+                              </Badge>
+                            ) : (
+                              <span className="text-xs text-red-400">未設定</span>
+                            )}
+                          </TableCell>
                           <TableCell>
                             {assignedCount === 0 ? (
                               <span className="text-xs text-gray-400">未設定</span>
@@ -278,13 +290,31 @@ export const CompaniesManagement: React.FC = () => {
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>履修単元の設定</DialogTitle>
+            <DialogTitle>会社設定：{companyToEdit?.name}</DialogTitle>
             <DialogDescription>
-              {companyToEdit?.name} が受講できる単元を設定します。
-              ここで設定した単元は、この会社の受講生全員に適用されます。
+              PIN と履修可能単元を設定します。PINは受講生がログイン時に入力します。
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
+            {/* PIN設定 */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium flex items-center gap-1.5">
+                <KeyRound className="h-4 w-4 text-gray-400" />
+                会社PIN
+              </label>
+              <Input
+                value={editPin}
+                onChange={(e) => setEditPin(e.target.value)}
+                placeholder="受講生が入力するPIN（例: abc123）"
+                maxLength={20}
+                className="font-mono"
+              />
+              <p className="text-xs text-gray-500">空にするとこの会社の受講生はログインできません</p>
+            </div>
+
+            <hr />
+
+            {/* 単元設定 */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
               <Input

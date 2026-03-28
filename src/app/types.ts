@@ -18,6 +18,7 @@ export interface Company {
   name: string;
   description?: string;
   allowedUnitIds?: string[];
+  pin?: string;
   createdAt?: string;
   updatedAt?: string;
 }

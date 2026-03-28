@@ -130,11 +130,11 @@ app.get("/health", (c) => {
   return c.json({ status: "ok" });
 });
 
-// Public endpoint: company list (no auth required)
+// Public endpoint: company list (no auth required) — PIN は返さない
 app.get('/public/companies', async (c) => {
   const { data, error } = await adminClient
     .from('companies')
-    .select('id, name, allowedUnitIds:allowed_unit_ids')
+    .select('id, name')
     .order('name', { ascending: true });
 
   if (error) {
@@ -142,6 +142,32 @@ app.get('/public/companies', async (c) => {
   }
 
   return c.json(data || []);
+});
+
+// Public endpoint: PIN verification — 正しければ会社情報（allowedUnitIds含む）を返す
+app.post('/public/verify-pin', async (c) => {
+  const body = await c.req.json();
+  const companyId = normalizeCompanyId(body?.companyId);
+  const pin = typeof body?.pin === 'string' ? body.pin.trim() : '';
+
+  if (!companyId) return c.json({ error: '会社を選択してください' }, 400);
+  if (!pin) return c.json({ error: 'PINを入力してください' }, 400);
+
+  const { data: company, error } = await adminClient
+    .from('companies')
+    .select('id, name, allowed_unit_ids, pin')
+    .eq('id', companyId)
+    .maybeSingle();
+
+  if (error || !company) return c.json({ error: '会社が見つかりません' }, 400);
+  if (!company.pin) return c.json({ error: 'このサービスはまだご利用いただけません' }, 403);
+  if (company.pin !== pin) return c.json({ error: 'PINが正しくありません' }, 401);
+
+  return c.json({
+    id: company.id,
+    name: company.name,
+    allowedUnitIds: company.allowed_unit_ids || [],
+  });
 });
 
 // Public endpoint: self-registration — invite is sent immediately, no approval required
@@ -226,7 +252,7 @@ app.post('/public/register-request', async (c) => {
 app.get('/admin/companies', requireAdmin, async (c) => {
   const { data, error } = await adminClient
     .from('companies')
-    .select('id, name, description, allowedUnitIds:allowed_unit_ids, createdAt:created_at, updatedAt:updated_at')
+    .select('id, name, description, allowedUnitIds:allowed_unit_ids, pin, createdAt:created_at, updatedAt:updated_at')
     .order('name', { ascending: true });
 
   if (error) {
@@ -268,8 +294,19 @@ app.patch('/admin/companies/:id', requireAdmin, async (c) => {
     return c.json({ error: 'Invalid allowedUnitIds' }, 400);
   }
 
+  // PIN: null → クリア, 文字列 → セット, undefined → 変更なし
+  const pinRaw = body?.pin;
+  const pin: string | null | undefined =
+    pinRaw === null ? null :
+    typeof pinRaw === 'string' ? pinRaw.trim() :
+    undefined;
+  if (pin !== undefined && typeof pin === 'string' && pin.length > 20) {
+    return c.json({ error: 'PIN は20文字以内で入力してください' }, 400);
+  }
+
   const updates: Record<string, unknown> = {};
   if (allowedUnitIds !== null) updates.allowed_unit_ids = allowedUnitIds;
+  if (pin !== undefined) updates.pin = pin || null;
 
   if (Object.keys(updates).length === 0) {
     return c.json({ error: 'No updates provided' }, 400);

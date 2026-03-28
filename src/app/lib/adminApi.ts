@@ -26,7 +26,13 @@ const publicFetch = async <T>(path: string, options: RequestInit = {}): Promise<
 
 export const publicApi = {
   listCompanies: async () => {
-    return publicFetch<{ id: string; name: string; allowedUnitIds: string[] }[]>('/public/companies', { method: 'GET' });
+    return publicFetch<{ id: string; name: string }[]>('/public/companies', { method: 'GET' });
+  },
+  verifyPin: async (payload: { companyId: string; pin: string }) => {
+    return publicFetch<{ id: string; name: string; allowedUnitIds: string[] }>('/public/verify-pin', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
   },
   submitRegistrationRequest: async (payload: {
     email: string;
@@ -142,7 +148,7 @@ export const adminApi = {
   deleteCompany: async (companyId: string) => {
     return adminFetch<{ success: true }>(`/admin/companies/${companyId}`, { method: 'DELETE' });
   },
-  updateCompany: async (companyId: string, payload: { allowedUnitIds?: string[] }) => {
+  updateCompany: async (companyId: string, payload: { allowedUnitIds?: string[]; pin?: string | null }) => {
     return adminFetch<{ success: true }>(`/admin/companies/${companyId}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
