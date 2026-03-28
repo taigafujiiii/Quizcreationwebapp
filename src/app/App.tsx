@@ -38,21 +38,9 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return <>{children}</>;
 };
 
-// 受講生ルートのラッパー（ログイン不要・会社選択必須、管理者は /admin へ）
+// 受講生ルートのラッパー（ログイン不要・会社選択必須）
 const StudentRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, loading } = useAuth();
   const { selectedCompany } = useCompany();
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-gray-500">読み込み中...</div>
-      </div>
-    );
-  }
-
-  // 管理者がアクセスした場合は管理画面へ
-  if (user?.role === 'admin') return <Navigate to="/admin" replace />;
 
   // 会社未選択なら選択画面へ
   if (!selectedCompany) return <Navigate to="/select-company" replace />;
