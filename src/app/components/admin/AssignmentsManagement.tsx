@@ -1622,14 +1622,15 @@ export const AssignmentsManagement: React.FC = () => {
 
       {/* 編集モーダル */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="w-[96vw] sm:w-[94vw] lg:w-[88vw] xl:w-[72vw] max-w-6xl h-[88vh] overflow-hidden flex flex-col">
+          <DialogHeader className="px-6 pt-6 pb-2">
             <DialogTitle>課題問題を編集</DialogTitle>
             <DialogDescription>
               課題問題の内容を編集します
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 pt-4">
+          <div className="flex-1 overflow-y-auto px-6 pb-4">
+            <div className="space-y-4 pt-2">
             {/* 単元選択 */}
             <div className="space-y-2">
               <Label>単元</Label>
@@ -1824,7 +1825,9 @@ export const AssignmentsManagement: React.FC = () => {
                 }
               />
             </div>
-
+            </div>
+          </div>
+          <div className="border-t bg-white px-6 py-4">
             <div className="flex justify-end gap-2">
               <Button
                 variant="outline"

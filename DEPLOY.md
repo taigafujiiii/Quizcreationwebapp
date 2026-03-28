@@ -29,6 +29,7 @@
   - `SUPABASE_ANON_KEY`
   - `SUPABASE_SERVICE_ROLE_KEY`
   - `INVITE_REDIRECT_URL` (例: `https://<your-domain>/accept-invite`)
+  - `CORS_ORIGINS` (例: `https://<your-domain>,https://<your-project>.vercel.app`)
 
 ## 5. 初期管理者の作成
 1. 管理者招待からメールを送信（`role=admin` で作成されます）

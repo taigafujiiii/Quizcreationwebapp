@@ -1,9 +1,11 @@
 node_modules
-.env.e2e
 .vercel
-.env*.local
 dist
 test-results
 playwright-report
-クイズアプリ
 クイズアプリ
+
+# 環境変数（.env.example のみ git 管理）
+.env
+.env.*
+!.env.example

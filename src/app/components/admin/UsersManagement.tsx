@@ -35,6 +35,7 @@ export const UsersManagement: React.FC = () => {
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [userToEdit, setUserToEdit] = useState<User | null>(null);
   const [editUsername, setEditUsername] = useState('');
+  const [editCompanyId, setEditCompanyId] = useState('');
   const [editAllowedUnits, setEditAllowedUnits] = useState<string[]>([]);
   const [unitSearchQuery, setUnitSearchQuery] = useState('');
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -188,6 +189,7 @@ export const UsersManagement: React.FC = () => {
   const handleEditClick = (user: User) => {
     setUserToEdit(user);
     setEditUsername(user.username || '');
+    setEditCompanyId(user.companyId || '');
     setEditAllowedUnits(user.allowedUnitIds || []);
     setUnitSearchQuery('');
     setEditDialogOpen(true);
@@ -263,12 +265,20 @@ export const UsersManagement: React.FC = () => {
       return;
     }
 
+    if (userToEdit.role === 'user' && !editCompanyId) {
+      toast.error('受講生には会社選択が必須です');
+      return;
+    }
+
     try {
       const res = await adminApi.updateUser(userToEdit.id, {
         username: editUsername.trim(),
+        companyId: userToEdit.role === 'user' ? editCompanyId : undefined,
         allowedUnitIds: userToEdit.role === 'user' ? editAllowedUnits : [],
         updatedAt: userToEdit.updatedAt,
       });
+
+      const companyName = companies.find((c) => c.id === editCompanyId)?.name;
 
       setUsers(
         users.map((u) =>
@@ -276,6 +286,8 @@ export const UsersManagement: React.FC = () => {
             ? {
                 ...u,
                 username: editUsername.trim(),
+                companyId: userToEdit.role === 'user' ? editCompanyId : undefined,
+                companyName: userToEdit.role === 'user' ? companyName : undefined,
                 allowedUnitIds: userToEdit.role === 'user' ? editAllowedUnits : undefined,
                 updatedAt: res.updatedAt ?? u.updatedAt,
               }
@@ -293,6 +305,7 @@ export const UsersManagement: React.FC = () => {
     setEditDialogOpen(false);
     setUserToEdit(null);
     setEditUsername('');
+    setEditCompanyId('');
     setEditAllowedUnits([]);
   };
 
@@ -744,7 +757,7 @@ export const UsersManagement: React.FC = () => {
           <DialogHeader>
             <DialogTitle>ユーザー情報を編集</DialogTitle>
             <DialogDescription>
-              ユーザー名と学習可能な単元を設定できます
+              ユーザー名・会社・学習可能な単元を設定できます
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-6 py-4">
@@ -777,6 +790,29 @@ export const UsersManagement: React.FC = () => {
                 {editUsername.length} / 50文字
               </p>
             </div>
+
+            {userToEdit?.role === 'user' && (
+              <div className="space-y-2">
+                <Label>会社 *</Label>
+                <Select value={editCompanyId} onValueChange={setEditCompanyId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="会社を選択してください" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {companies.map((company) => (
+                      <SelectItem key={company.id} value={company.id}>
+                        {company.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {companies.length === 0 && (
+                  <p className="text-xs text-red-600">
+                    会社が未登録です。先に「会社管理」で会社を登録してください。
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* 学習可能単元（USERのみ） */}
             {userToEdit?.role === 'user' && (

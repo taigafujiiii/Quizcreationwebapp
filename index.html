@@ -7,9 +7,24 @@
       <title>Quiz Creation Web App</title>
     </head>
 
-    <body>
-      <div id="root"></div>
-      <script type="module" src="/src/main.tsx"></script>
-    </body>
-  </html>
+  <body>
+    <div id="root"></div>
+    <script>
+      (function () {
+        var isRootPath = window.location.pathname === '/' || window.location.pathname === '';
+        if (!isRootPath) return;
+
+        var hash = window.location.hash || '';
+        var search = window.location.search || '';
+        var hasInviteType = /(?:^|[&#])type=invite(?:&|$)/.test(hash) || /(?:^|[?&])type=invite(?:&|$)/.test(search);
+        var hasOtpExpired = /(?:^|[&#])error_code=otp_expired(?:&|$)/.test(hash);
+
+        if (!hasInviteType && !hasOtpExpired) return;
+
+        window.location.replace('/accept-invite' + search + hash);
+      })();
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
   

@@ -4,10 +4,13 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "build": "vite build",
     "dev": "vite",
-    "test:e2e": "set -a; source .env.e2e; set +a; npx playwright test",
-    "test:e2e:watch": "chokidar \"src/**/*.{ts,tsx,js,jsx}\" \"tests/e2e/**/*.ts\" \"playwright.config.ts\" -c \"npm run test:e2e\""
+    "build": "vite build",
+    "test:e2e": "set -a; source .env; set +a; npx playwright test",
+    "test:e2e:watch": "chokidar \"src/**/*.{ts,tsx,js,jsx}\" \"tests/e2e/**/*.ts\" \"playwright.config.ts\" -c \"npm run test:e2e\"",
+    "migrate": "set -a; source .env; set +a; SUPABASE_ACCESS_TOKEN=$SUPABASE_ACCESS_TOKEN npx supabase db push --project-ref $SUPABASE_PROJECT_REF",
+    "fn:deploy": "set -a; source .env; set +a; SUPABASE_ACCESS_TOKEN=$SUPABASE_ACCESS_TOKEN npx supabase functions deploy server --project-ref $SUPABASE_PROJECT_REF",
+    "fn:env": "set -a; source .env; set +a; SUPABASE_ACCESS_TOKEN=$SUPABASE_ACCESS_TOKEN npx supabase secrets set --project-ref $SUPABASE_PROJECT_REF SUPABASE_URL=$VITE_SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY INVITE_REDIRECT_URL=$INVITE_REDIRECT_URL CORS_ORIGINS=$CORS_ORIGINS"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
