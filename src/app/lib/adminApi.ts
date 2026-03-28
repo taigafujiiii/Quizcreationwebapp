@@ -26,7 +26,7 @@ const publicFetch = async <T>(path: string, options: RequestInit = {}): Promise<
 
 export const publicApi = {
   listCompanies: async () => {
-    return publicFetch<{ id: string; name: string }[]>('/public/companies', { method: 'GET' });
+    return publicFetch<{ id: string; name: string; allowedUnitIds: string[] }[]>('/public/companies', { method: 'GET' });
   },
   submitRegistrationRequest: async (payload: {
     email: string;

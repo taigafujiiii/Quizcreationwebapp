@@ -1,11 +1,10 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { CompanyProvider, useCompany } from './context/CompanyContext';
 import { Login } from './components/auth/Login';
-import { AcceptInvite } from './components/auth/AcceptInvite';
-import { Register } from './components/auth/Register';
-import { Verify } from './components/auth/Verify';
 import { Forgot } from './components/auth/Forgot';
+import { SelectCompany } from './components/auth/SelectCompany';
 import { Home } from './components/user/Home';
 import { QuizSetup } from './components/quiz/QuizSetup';
 import { Quiz } from './components/quiz/Quiz';
@@ -21,169 +20,71 @@ import { UsersManagement } from './components/admin/UsersManagement';
 import { CompaniesManagement } from './components/admin/CompaniesManagement';
 import { Toaster } from './components/ui/sonner';
 
-// 認証が必要なルートのラッパー
-const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, loading } = useAuth();
-  
-  // Session復元中に /login へ飛ばすと、毎回ログインが必要になる。
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-        <div className="text-gray-500">読み込み中...</div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return <Navigate to="/login" replace />;
-  }
-  
-  return <>{children}</>;
-};
-
 // 管理者専用ルートのラッパー
 const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
-  
+
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-gray-500">読み込み中...</div>
       </div>
     );
   }
 
-  if (!user) {
-    return <Navigate to="/login" replace />;
-  }
-  
-  if (user.role !== 'admin') {
-    return <Navigate to="/" replace />;
-  }
-  
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.role !== 'admin') return <Navigate to="/" replace />;
+
   return <>{children}</>;
 };
 
-// ルーティング設定
+// 受講生ルートのラッパー（ログイン不要・会社選択必須、管理者は /admin へ）
+const StudentRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user, loading } = useAuth();
+  const { selectedCompany } = useCompany();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-gray-500">読み込み中...</div>
+      </div>
+    );
+  }
+
+  // 管理者がアクセスした場合は管理画面へ
+  if (user?.role === 'admin') return <Navigate to="/admin" replace />;
+
+  // 会社未選択なら選択画面へ
+  if (!selectedCompany) return <Navigate to="/select-company" replace />;
+
+  return <>{children}</>;
+};
+
 const AppRoutes: React.FC = () => {
   return (
     <Routes>
-      {/* 認証ルート */}
+      {/* 公開ルート */}
       <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
-      <Route path="/accept-invite" element={<AcceptInvite />} />
-      <Route path="/verify" element={<Verify />} />
       <Route path="/forgot" element={<Forgot />} />
-      
-      {/* ユーザールート（認証必要） */}
-      <Route
-        path="/"
-        element={
-          <ProtectedRoute>
-            <Home />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/quiz/setup"
-        element={
-          <ProtectedRoute>
-            <QuizSetup />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/quiz"
-        element={
-          <ProtectedRoute>
-            <Quiz />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/result"
-        element={
-          <ProtectedRoute>
-            <Result />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/assignment/units"
-        element={
-          <ProtectedRoute>
-            <UnitSelect />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/assignment/categories/:unitId"
-        element={
-          <ProtectedRoute>
-            <CategoryList />
-          </ProtectedRoute>
-        }
-      />
-      
-      {/* 管理者ルート（管理者権限必要） */}
-      <Route
-        path="/admin"
-        element={
-          <AdminRoute>
-            <AdminDashboard />
-          </AdminRoute>
-        }
-      />
-      <Route
-        path="/admin/units"
-        element={
-          <AdminRoute>
-            <UnitsManagement />
-          </AdminRoute>
-        }
-      />
-      <Route
-        path="/admin/categories"
-        element={
-          <AdminRoute>
-            <CategoriesManagement />
-          </AdminRoute>
-        }
-      />
-      <Route
-        path="/admin/questions"
-        element={
-          <AdminRoute>
-            <QuestionsManagement />
-          </AdminRoute>
-        }
-      />
-      <Route
-        path="/admin/assignments"
-        element={
-          <AdminRoute>
-            <AssignmentsManagement />
-          </AdminRoute>
-        }
-      />
-      <Route
-        path="/admin/users"
-        element={
-          <AdminRoute>
-            <UsersManagement />
-          </AdminRoute>
-        }
-      />
-      <Route
-        path="/admin/companies"
-        element={
-          <AdminRoute>
-            <CompaniesManagement />
-          </AdminRoute>
-        }
-      />
-      
-      {/* その他 */}
+      <Route path="/select-company" element={<SelectCompany />} />
+
+      {/* 受講生ルート（ログイン不要・会社選択必須） */}
+      <Route path="/" element={<StudentRoute><Home /></StudentRoute>} />
+      <Route path="/quiz/setup" element={<StudentRoute><QuizSetup /></StudentRoute>} />
+      <Route path="/quiz" element={<StudentRoute><Quiz /></StudentRoute>} />
+      <Route path="/result" element={<StudentRoute><Result /></StudentRoute>} />
+      <Route path="/assignment/units" element={<StudentRoute><UnitSelect /></StudentRoute>} />
+      <Route path="/assignment/categories/:unitId" element={<StudentRoute><CategoryList /></StudentRoute>} />
+
+      {/* 管理者ルート */}
+      <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
+      <Route path="/admin/units" element={<AdminRoute><UnitsManagement /></AdminRoute>} />
+      <Route path="/admin/categories" element={<AdminRoute><CategoriesManagement /></AdminRoute>} />
+      <Route path="/admin/questions" element={<AdminRoute><QuestionsManagement /></AdminRoute>} />
+      <Route path="/admin/assignments" element={<AdminRoute><AssignmentsManagement /></AdminRoute>} />
+      <Route path="/admin/users" element={<AdminRoute><UsersManagement /></AdminRoute>} />
+      <Route path="/admin/companies" element={<AdminRoute><CompaniesManagement /></AdminRoute>} />
+
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
@@ -193,8 +94,10 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppRoutes />
-        <Toaster />
+        <CompanyProvider>
+          <AppRoutes />
+          <Toaster />
+        </CompanyProvider>
       </AuthProvider>
     </BrowserRouter>
   );

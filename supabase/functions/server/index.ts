@@ -130,11 +130,11 @@ app.get("/health", (c) => {
   return c.json({ status: "ok" });
 });
 
-// Public endpoint: company list for registration form (no auth required)
+// Public endpoint: company list (no auth required)
 app.get('/public/companies', async (c) => {
   const { data, error } = await adminClient
     .from('companies')
-    .select('id, name')
+    .select('id, name, allowedUnitIds:allowed_unit_ids')
     .order('name', { ascending: true });
 
   if (error) {
