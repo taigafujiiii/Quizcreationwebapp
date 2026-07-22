@@ -252,22 +252,26 @@ export const AssignmentsManagement: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
-    const { data: unitData, error: unitError } = await supabase
-      .from('units')
-      .select('id, name, description, updatedAt:updated_at')
-      .order('created_at', { ascending: true });
-
-    const { data: categoryData, error: categoryError } = await supabase
-      .from('categories')
-      .select('id, name, description, unitId:unit_id, updatedAt:updated_at')
-      .order('created_at', { ascending: true });
-
-    const { data: questionData, error: questionError } = await supabase
-      .from('questions')
-      .select(
-        'id, text, optionA:option_a, optionB:option_b, optionC:option_c, optionD:option_d, correctAnswer:correct_answer, answerMethod:answer_method, explanation, categoryId:category_id, isActive:is_active, isAssignment:is_assignment, updatedAt:updated_at'
-      )
-      .order('created_at', { ascending: false });
+    const [
+      { data: unitData, error: unitError },
+      { data: categoryData, error: categoryError },
+      { data: questionData, error: questionError },
+    ] = await Promise.all([
+      supabase
+        .from('units')
+        .select('id, name, description, updatedAt:updated_at')
+        .order('created_at', { ascending: true }),
+      supabase
+        .from('categories')
+        .select('id, name, description, unitId:unit_id, updatedAt:updated_at')
+        .order('created_at', { ascending: true }),
+      supabase
+        .from('questions')
+        .select(
+          'id, text, optionA:option_a, optionB:option_b, optionC:option_c, optionD:option_d, correctAnswer:correct_answer, answerMethod:answer_method, explanation, categoryId:category_id, isActive:is_active, isAssignment:is_assignment, updatedAt:updated_at'
+        )
+        .order('created_at', { ascending: false }),
+    ]);
 
     if (unitError || categoryError || questionError) {
       toast.error('データの取得に失敗しました');
@@ -336,57 +340,73 @@ export const AssignmentsManagement: React.FC = () => {
   }, [questions, categories]);
 
   // 全課題問題数
-  const totalAssignmentCount = questions.filter((q) => q.isAssignment).length;
+  const totalAssignmentCount = useMemo(
+    () => questions.filter((q) => q.isAssignment).length,
+    [questions]
+  );
 
   // 課題問題を単元・カテゴリフィルタで絞り込み
-  const getFilteredAssignmentQuestions = () => {
+  const filteredAssignmentQuestions = useMemo(() => {
     let filtered = questions.filter((q) => q.isAssignment);
-    
+
     if (selectedUnitId !== 'all') {
       const categoriesInUnit = categories
         .filter((c) => c.unitId === selectedUnitId)
         .map((c) => c.id);
       filtered = filtered.filter((q) => categoriesInUnit.includes(q.categoryId));
     }
-    
+
     // カテゴリでさらに絞り込み
     if (selectedCategoryId !== 'all') {
       filtered = filtered.filter((q) => q.categoryId === selectedCategoryId);
     }
-    
+
     return filtered;
-  };
+  }, [questions, categories, selectedUnitId, selectedCategoryId]);
 
   // 既存問題（課題でない問題）を単元・カテゴリフィルタで絞り込み
-  const getFilteredExistingQuestions = () => {
+  const filteredExistingQuestions = useMemo(() => {
     let filtered = questions.filter((q) => !q.isAssignment);
-    
+
     if (selectedUnitId !== 'all') {
       const categoriesInUnit = categories
         .filter((c) => c.unitId === selectedUnitId)
         .map((c) => c.id);
       filtered = filtered.filter((q) => categoriesInUnit.includes(q.categoryId));
     }
-    
+
     // カテゴリでさらに絞り込み
     if (selectedCategoryId !== 'all') {
       filtered = filtered.filter((q) => q.categoryId === selectedCategoryId);
     }
-    
+
     if (filterCategory !== 'all') {
       filtered = filtered.filter((q) => q.categoryId === filterCategory);
     }
-    
+
     return filtered;
-  };
+  }, [questions, categories, selectedUnitId, selectedCategoryId, filterCategory]);
+
+  // 名前解決用の Map（O(1) 参照）
+  const categoryById = useMemo(() => {
+    const map = new Map<string, Category>();
+    categories.forEach((c) => map.set(c.id, c));
+    return map;
+  }, [categories]);
+
+  const unitById = useMemo(() => {
+    const map = new Map<string, Unit>();
+    units.forEach((u) => map.set(u.id, u));
+    return map;
+  }, [units]);
 
   const getCategoryName = (categoryId: string) => {
-    return categories.find((c) => c.id === categoryId)?.name || '不明';
+    return categoryById.get(categoryId)?.name || '不明';
   };
 
   const getUnitName = (categoryId: string) => {
-    const category = categories.find((c) => c.id === categoryId);
-    return units.find((u) => u.id === category?.unitId)?.name || '不明';
+    const category = categoryById.get(categoryId);
+    return category ? unitById.get(category.unitId)?.name || '不明' : '不明';
   };
 
   const handleAddToAssignment = async (questionId: string) => {
@@ -1473,7 +1493,7 @@ export const AssignmentsManagement: React.FC = () => {
                 </div>
               </CardHeader>
               <CardContent>
-                {getFilteredAssignmentQuestions().length === 0 ? (
+                {filteredAssignmentQuestions.length === 0 ? (
                   <div className="text-center py-12 text-gray-500">
                     {selectedUnitId === 'all'
                       ? '課題問題がありません。「課題問題を新規作成」または「既存問題から追加」タブから追加してください。'
@@ -1492,7 +1512,7 @@ export const AssignmentsManagement: React.FC = () => {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {getFilteredAssignmentQuestions().map((question) => (
+                        {filteredAssignmentQuestions.map((question) => (
                           <TableRow key={question.id}>
                             <TableCell>
                               <Badge variant="outline">
@@ -1568,7 +1588,7 @@ export const AssignmentsManagement: React.FC = () => {
                   </div>
                 </div>
 
-                {getFilteredExistingQuestions().length === 0 ? (
+                {filteredExistingQuestions.length === 0 ? (
                   <div className="text-center py-12 text-gray-500">
                     条件に合う問題がありません
                   </div>
@@ -1584,7 +1604,7 @@ export const AssignmentsManagement: React.FC = () => {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {getFilteredExistingQuestions().map((question) => (
+                        {filteredExistingQuestions.map((question) => (
                           <TableRow key={question.id}>
                             <TableCell>
                               <Badge variant="outline">

@@ -65,15 +65,19 @@ export const CategoriesManagement: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
-    const { data: unitData, error: unitError } = await supabase
-      .from('units')
-      .select('id, name, description')
-      .order('created_at', { ascending: true });
-
-    const { data: categoryData, error: categoryError } = await supabase
-      .from('categories')
-      .select('id, name, description, unitId:unit_id, updatedAt:updated_at')
-      .order('created_at', { ascending: true });
+    const [
+      { data: unitData, error: unitError },
+      { data: categoryData, error: categoryError },
+    ] = await Promise.all([
+      supabase
+        .from('units')
+        .select('id, name, description')
+        .order('created_at', { ascending: true }),
+      supabase
+        .from('categories')
+        .select('id, name, description, unitId:unit_id, updatedAt:updated_at')
+        .order('created_at', { ascending: true }),
+    ]);
 
     if (unitError || categoryError) {
       toast.error('データの取得に失敗しました');
