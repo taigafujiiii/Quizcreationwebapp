@@ -783,6 +783,22 @@ app.post('/admin/users/:id/deactivate', requireAdmin, async (c) => {
       return c.json({ error: error.message }, 500);
     }
 
+    // Revoke existing sessions by banning the user (B8 ruling): the deactivate
+    // endpoint only has the target userId, not their JWT, so admin.signOut(jwt)
+    // cannot be used. A ban makes GoTrue reject the user's access/refresh tokens.
+    // NOTE (reactivate hand-off): a future "reactivate" flow must lift this ban
+    // via admin.updateUserById(userId, { ban_duration: 'none' }). No reactivate
+    // flow exists today, and re-invite paths call admin.deleteUser first (which
+    // clears the ban), so this ban is safe.
+    const { error: banError } = await adminClient.auth.admin.updateUserById(userId, {
+      ban_duration: '876000h', // effectively permanent (~100 years)
+    });
+    if (banError) {
+      // is_active=false already committed above; RLS blocks data access immediately,
+      // so a failed session revoke is non-fatal. Log and continue.
+      console.error('deactivate: failed to revoke sessions', banError.message);
+    }
+
     return c.json({ success: true, action: 'deactivated' as const });
   }
 
