@@ -20,14 +20,34 @@ export const ResetPassword: React.FC = () => {
   useEffect(() => {
     const init = async () => {
       try {
+        // detectSessionInUrl: true により SDK が既にセッションを確立している場合がある
+        const { data: pre } = await supabase.auth.getSession();
+        if (pre.session?.user) {
+          setReady(true);
+          return;
+        }
+
         const url = new URL(window.location.href);
         const code = url.searchParams.get('code');
+        const tokenHash = url.searchParams.get('token_hash');
+        const type = url.searchParams.get('type');
+
+        // ハッシュ形式（#access_token=...&refresh_token=...）
+        const hash = new URLSearchParams(url.hash.startsWith('#') ? url.hash.slice(1) : url.hash);
+        const accessToken = hash.get('access_token');
+        const refreshToken = hash.get('refresh_token');
+
         if (code) {
-          await supabase.auth.exchangeCodeForSession(code);
-        } else {
-          // @ts-expect-error TODO(R11/S8): getSessionFromUrl は supabase-js 2.56 に存在しない。R11 で正規APIに置換
-          await supabase.auth.getSessionFromUrl({ storeSession: true });
+          const { error } = await supabase.auth.exchangeCodeForSession(code);
+          if (error) throw error;
+        } else if (tokenHash && type) {
+          const { error } = await supabase.auth.verifyOtp({ type: type as any, token_hash: tokenHash });
+          if (error) throw error;
+        } else if (accessToken && refreshToken) {
+          const { error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+          if (error) throw error;
         }
+
         const { data } = await supabase.auth.getSession();
         if (!data.session?.user) {
           setError('リンクが無効か、期限切れです。');
