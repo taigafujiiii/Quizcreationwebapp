@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
@@ -11,10 +11,23 @@ import { CheckCircle, XCircle, Home } from 'lucide-react';
 export const Result: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { questions, answers } = location.state as {
-    questions: Question[];
-    answers: QuizAnswer[];
-  };
+  const state = location.state as {
+    questions?: Question[];
+    answers?: QuizAnswer[];
+  } | null;
+
+  useEffect(() => {
+    if (!state?.questions || !state?.answers || state.questions.length === 0) {
+      navigate('/', { replace: true });
+    }
+  }, [state, navigate]);
+
+  if (!state?.questions || !state?.answers || state.questions.length === 0) {
+    // location.state 欠落（リロード/直アクセス/state無し遷移）時は白画面クラッシュを避けリダイレクト
+    return null;
+  }
+
+  const { questions, answers } = state;
 
   const normalizeAnswer = (raw: string) => {
     const v = (raw ?? '').trim().toUpperCase();
@@ -59,7 +72,7 @@ export const Result: React.FC = () => {
 
   const correctCount = results.filter((r) => r.isCorrect).length;
   const totalCount = results.length;
-  const percentage = Math.round((correctCount / totalCount) * 100);
+  const percentage = totalCount ? Math.round((correctCount / totalCount) * 100) : 0;
 
   const getAnswerLabel = (answer: string) => {
     if (answer === 'unknown') return 'わからない';

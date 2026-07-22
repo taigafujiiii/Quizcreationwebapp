@@ -83,10 +83,14 @@ export const UsersManagement: React.FC = () => {
 
     if (unitsResult.status === 'fulfilled' && !unitsResult.value.error) {
       setUnits(unitsResult.value.data || []);
+    } else {
+      toast.error('単元の取得に失敗しました');
     }
 
     if (companiesResult.status === 'fulfilled') {
       setCompanies(companiesResult.value);
+    } else {
+      toast.error('会社一覧の取得に失敗しました');
     }
 
     setLoading(false);

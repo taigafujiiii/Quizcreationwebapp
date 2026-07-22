@@ -503,6 +503,7 @@ app.patch('/admin/companies/:id', requireAdmin, async (c) => {
 
   const body = await c.req.json();
   const allowedUnitIds = normalizeAllowedUnitIds(body?.allowedUnitIds);
+  const prevUpdatedAt = typeof body?.updatedAt === 'string' ? body.updatedAt : null;
 
   if (body?.allowedUnitIds !== undefined && allowedUnitIds === null) {
     return c.json({ error: 'Invalid allowedUnitIds' }, 400);
@@ -526,14 +527,26 @@ app.patch('/admin/companies/:id', requireAdmin, async (c) => {
     return c.json({ error: 'No updates provided' }, 400);
   }
 
-  const { error } = await adminClient
+  let q = adminClient
     .from('companies')
     .update(updates)
     .eq('id', companyId);
 
+  if (prevUpdatedAt) {
+    q = q.eq('updated_at', prevUpdatedAt);
+  }
+
+  const { data, error } = await q
+    .select('updatedAt:updated_at')
+    .maybeSingle();
+
   if (error) return c.json({ error: error.message }, 500);
 
-  return c.json({ success: true });
+  if (prevUpdatedAt && !data) {
+    return c.json({ error: 'Conflict: already updated by another user' }, 409);
+  }
+
+  return c.json({ success: true, updatedAt: (data as any)?.updatedAt ?? null });
 });
 
 app.delete('/admin/companies/:id', requireAdmin, async (c) => {

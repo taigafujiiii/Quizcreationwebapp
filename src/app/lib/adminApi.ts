@@ -164,8 +164,8 @@ export const adminApi = {
   deleteCompany: async (companyId: string) => {
     return adminFetch<{ success: true }>(`/admin/companies/${companyId}`, { method: 'DELETE' });
   },
-  updateCompany: async (companyId: string, payload: { allowedUnitIds?: string[]; pin?: string | null }) => {
-    return adminFetch<{ success: true }>(`/admin/companies/${companyId}`, {
+  updateCompany: async (companyId: string, payload: { allowedUnitIds?: string[]; pin?: string | null; updatedAt?: string }) => {
+    return adminFetch<{ success: true; updatedAt?: string | null }>(`/admin/companies/${companyId}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
     });

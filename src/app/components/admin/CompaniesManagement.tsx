@@ -41,7 +41,11 @@ export const CompaniesManagement: React.FC = () => {
         supabase.from('units').select('id, name, description').order('created_at', { ascending: true }),
       ]);
       setCompanies(companyData);
-      if (!unitRes.error) setUnits(unitRes.data || []);
+      if (!unitRes.error) {
+        setUnits(unitRes.data || []);
+      } else {
+        toast.error('単元の取得に失敗しました');
+      }
     } catch {
       toast.error('データの取得に失敗しました');
     } finally {
@@ -122,16 +126,30 @@ export const CompaniesManagement: React.FC = () => {
     setSaving(true);
     const pinValue = editPin.trim() || null;
     try {
-      await adminApi.updateCompany(companyToEdit.id, { allowedUnitIds: editAllowedUnits, pin: pinValue });
+      const res = await adminApi.updateCompany(companyToEdit.id, {
+        allowedUnitIds: editAllowedUnits,
+        pin: pinValue,
+        updatedAt: companyToEdit.updatedAt,
+      });
       setCompanies((prev) =>
-        prev.map((c) => c.id === companyToEdit.id ? { ...c, allowedUnitIds: editAllowedUnits, pin: pinValue ?? undefined } : c)
+        prev.map((c) =>
+          c.id === companyToEdit.id
+            ? { ...c, allowedUnitIds: editAllowedUnits, pin: pinValue ?? undefined, updatedAt: res.updatedAt ?? c.updatedAt }
+            : c
+        )
       );
       toast.success('設定を保存しました');
       setIsEditDialogOpen(false);
     } catch (error) {
       const message =
         error && typeof error === 'object' && 'message' in error ? String((error as any).message) : '';
-      toast.error(message || '保存に失敗しました');
+      // 楽観ロック競合（他の管理者が先に更新済み）は再取得して最新化
+      if (message.includes('409') || message.includes('Conflict')) {
+        toast.error('保存に失敗しました（他のユーザーが先に更新した可能性があります）');
+        await loadData();
+      } else {
+        toast.error(message || '保存に失敗しました');
+      }
     } finally {
       setSaving(false);
     }
