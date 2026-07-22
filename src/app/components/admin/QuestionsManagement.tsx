@@ -13,8 +13,9 @@ import { Badge } from '../ui/badge';
 import { Checkbox } from '../ui/checkbox';
 import { Header } from '../layout/Header';
 import { AnswerMethod, Choice, Question, Category, Unit } from '../../types';
-import { ArrowLeft, Plus, Edit, Trash2 } from 'lucide-react';
+import { ArrowLeft, Plus, Edit, Trash2, Download } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { buildQuestionsWorkbook } from '../../lib/questionXlsx';
 import { toast } from 'sonner';
 
 export const QuestionsManagement: React.FC = () => {
@@ -337,6 +338,41 @@ export const QuestionsManagement: React.FC = () => {
     await loadData();
   };
 
+  // ファイル名: DESIGN 指定の questions_YYYYMMDD_HHmm.xlsx(ローカル時刻・ゼロ埋め)
+  const buildExportFileName = () => {
+    const d = new Date();
+    const p = (n: number) => String(n).padStart(2, '0');
+    const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`;
+    return `questions_${stamp}.xlsx`;
+  };
+
+  // エクスポート実行(A1: 名前解決は X01 内部。buildQuestionsWorkbook に categories/units を渡す)。
+  // 全件=questions / 絞り込み結果=filteredQuestions。既存の Blob + createObjectURL パターンでDL。
+  const handleExport = async (scope: 'all' | 'filtered') => {
+    const target = scope === 'all' ? questions : filteredQuestions;
+    if (target.length === 0) {
+      toast.error('エクスポート対象の問題がありません');
+      return;
+    }
+    try {
+      const bytes = await buildQuestionsWorkbook(target, { categories, units });
+      const blob = new Blob([bytes], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = buildExportFileName();
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`${target.length}件をエクスポートしました`);
+    } catch {
+      toast.error('エクスポートに失敗しました');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
@@ -355,6 +391,22 @@ export const QuestionsManagement: React.FC = () => {
             <div className="flex justify-between items-center gap-4">
               <CardTitle>問題一覧</CardTitle>
               <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  disabled={loading || questions.length === 0}
+                  onClick={() => void handleExport('all')}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  全件エクスポート
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={loading || filteredQuestions.length === 0}
+                  onClick={() => void handleExport('filtered')}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  絞り込み結果をエクスポート
+                </Button>
                 <Button
                   variant="outline"
                   disabled={selectedIds.length === 0}
