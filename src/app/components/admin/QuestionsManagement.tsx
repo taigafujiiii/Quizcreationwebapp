@@ -77,22 +77,27 @@ export const QuestionsManagement: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
-    const { data: unitData, error: unitError } = await supabase
-      .from('units')
-      .select('id, name, description')
-      .order('created_at', { ascending: true });
-
-    const { data: questionData, error: questionError } = await supabase
-      .from('questions')
-      .select(
-        'id, text, optionA:option_a, optionB:option_b, optionC:option_c, optionD:option_d, correctAnswer:correct_answer, answerMethod:answer_method, explanation, categoryId:category_id, isActive:is_active, isAssignment:is_assignment, updatedAt:updated_at'
-      )
-      .order('created_at', { ascending: false });
-
-    const { data: categoryData, error: categoryError } = await supabase
-      .from('categories')
-      .select('id, name, description, unitId:unit_id')
-      .order('created_at', { ascending: true });
+    // P2-4: 3クエリを直列awaitから Promise.all で並列化(select列エイリアス・order は現状のまま)。
+    const [
+      { data: unitData, error: unitError },
+      { data: questionData, error: questionError },
+      { data: categoryData, error: categoryError },
+    ] = await Promise.all([
+      supabase
+        .from('units')
+        .select('id, name, description')
+        .order('created_at', { ascending: true }),
+      supabase
+        .from('questions')
+        .select(
+          'id, text, optionA:option_a, optionB:option_b, optionC:option_c, optionD:option_d, correctAnswer:correct_answer, answerMethod:answer_method, explanation, categoryId:category_id, isActive:is_active, isAssignment:is_assignment, updatedAt:updated_at'
+        )
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('categories')
+        .select('id, name, description, unitId:unit_id')
+        .order('created_at', { ascending: true }),
+    ]);
 
     if (unitError || questionError || categoryError) {
       toast.error('データの取得に失敗しました');
@@ -160,9 +165,29 @@ export const QuestionsManagement: React.FC = () => {
         await loadData();
         return;
       }
+      // 楽観的ローカル更新: 全件再取得せず該当行のみ差し替え。
+      // isAssignment 等の update select 非返却列は editingQuestion から引き継ぎ、
+      // 新 updatedAt を反映して連続編集でも競合検知が働くようにする(裁定B5)。
+      const updatedQuestion: Question = {
+        ...editingQuestion,
+        text: formData.text,
+        optionA: formData.optionA,
+        optionB: formData.optionB,
+        optionC: formData.optionC,
+        optionD: formData.optionD,
+        correctAnswer: formData.correctAnswer,
+        answerMethod: formData.answerMethod,
+        explanation: formData.explanation,
+        categoryId: formData.categoryId,
+        isActive: formData.isActive,
+        updatedAt: (data as { updatedAt?: string }).updatedAt ?? editingQuestion.updatedAt,
+      };
+      setQuestions(questions.map((q) => (q.id === editingQuestion.id ? updatedQuestion : q)));
       toast.success('問題を更新しました');
     } else {
-      const { error } = await supabase
+      // insert に loadData と同一エイリアスの .select().single() を付与し(裁定B5)、
+      // 返却行を先頭に楽観追加する(一覧は created_at 降順=新規は先頭)。updatedAt 取得必須。
+      const { data, error } = await supabase
         .from('questions')
         .insert({
           text: formData.text,
@@ -176,18 +201,22 @@ export const QuestionsManagement: React.FC = () => {
           category_id: formData.categoryId,
           is_active: formData.isActive,
           is_assignment: false,
-        });
+        })
+        .select(
+          'id, text, optionA:option_a, optionB:option_b, optionC:option_c, optionD:option_d, correctAnswer:correct_answer, answerMethod:answer_method, explanation, categoryId:category_id, isActive:is_active, isAssignment:is_assignment, updatedAt:updated_at'
+        )
+        .single();
 
       if (error) {
         toast.error('問題の作成に失敗しました');
         return;
       }
+      setQuestions([data as Question, ...questions]);
       toast.success('問題を作成しました');
     }
 
     setIsDialogOpen(false);
     resetForm();
-    await loadData();
   };
 
   const resetForm = () => {
@@ -228,13 +257,17 @@ export const QuestionsManagement: React.FC = () => {
       return;
     }
 
+    // 楽観的ローカル削除: 全件再取得せず該当行のみ除去。失敗時は退避値へロールバック。
+    const prev = questions;
+    setQuestions(prev.filter((q) => q.id !== id));
+
     const { error } = await supabase.from('questions').delete().eq('id', id);
     if (error) {
+      setQuestions(prev);
       toast.error('問題の削除に失敗しました');
       return;
     }
     toast.success('問題を削除しました');
-    await loadData();
   };
 
   const handleNew = () => {
@@ -275,14 +308,21 @@ export const QuestionsManagement: React.FC = () => {
     );
   };
 
+  // P2-2: テーブル行ごとの O(n) 線形探索を Map(useMemo)で O(1) 参照化。
+  const categoryById = useMemo(
+    () => new Map(categories.map((c) => [c.id, c])),
+    [categories]
+  );
+  const unitById = useMemo(() => new Map(units.map((u) => [u.id, u])), [units]);
+
   const getCategoryName = (categoryId: string) => {
-    return categories.find((c) => c.id === categoryId)?.name || '不明';
+    return categoryById.get(categoryId)?.name || '不明';
   };
 
   const getUnitNameByCategoryId = (categoryId: string) => {
-    const category = categories.find((c) => c.id === categoryId);
+    const category = categoryById.get(categoryId);
     if (!category) return '不明';
-    return units.find((u) => u.id === category.unitId)?.name || '不明';
+    return unitById.get(category.unitId)?.name || '不明';
   };
 
   const filteredQuestions = useMemo(() => {
@@ -336,14 +376,21 @@ export const QuestionsManagement: React.FC = () => {
       return;
     }
 
-    const { error } = await supabase.from('questions').delete().in('id', selectedIds);
+    // 楽観的ローカル一括削除: 全件再取得せず対象行のみ除去 + 選択解除。失敗時はロールバック。
+    const prev = questions;
+    const prevSelected = selectedIds;
+    const count = selectedIds.length;
+    setQuestions(prev.filter((q) => !prevSelected.includes(q.id)));
+    setSelectedIds([]);
+
+    const { error } = await supabase.from('questions').delete().in('id', prevSelected);
     if (error) {
+      setQuestions(prev);
+      setSelectedIds(prevSelected);
       toast.error('問題の削除に失敗しました');
       return;
     }
-    toast.success(`問題を${selectedIds.length}件削除しました`);
-    setSelectedIds([]);
-    await loadData();
+    toast.success(`問題を${count}件削除しました`);
   };
 
   // ファイル名: DESIGN 指定の questions_YYYYMMDD_HHmm.xlsx(ローカル時刻・ゼロ埋め)
