@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -13,9 +13,10 @@ import { Badge } from '../ui/badge';
 import { Checkbox } from '../ui/checkbox';
 import { Header } from '../layout/Header';
 import { AnswerMethod, Choice, Question, Category, Unit } from '../../types';
-import { ArrowLeft, Plus, Edit, Trash2, Download } from 'lucide-react';
+import { ArrowLeft, Plus, Edit, Trash2, Download, Upload } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { buildQuestionsWorkbook } from '../../lib/questionXlsx';
+import { buildQuestionsWorkbook, parseQuestionsXlsx, classifyRows } from '../../lib/questionXlsx';
+import type { ParsedQuestionRow, RowError } from '../../lib/questionXlsx';
 import { toast } from 'sonner';
 
 export const QuestionsManagement: React.FC = () => {
@@ -41,6 +42,13 @@ export const QuestionsManagement: React.FC = () => {
     isActive: true,
   });
   const [loading, setLoading] = useState(true);
+
+  // xlsx インポート(X04)state
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const importFileRef = useRef<HTMLInputElement | null>(null);
+  const [importErrors, setImportErrors] = useState<RowError[]>([]);
+  const [importRows, setImportRows] = useState<ParsedQuestionRow[]>([]);
+  const [importing, setImporting] = useState(false);
 
   const parseCorrectAnswerList = (raw: string): Choice[] => {
     const v = (raw ?? '').trim().toUpperCase();
@@ -373,6 +381,132 @@ export const QuestionsManagement: React.FC = () => {
     }
   };
 
+  // ---------------------------------------------------------------------------
+  // xlsx インポート(X04)
+  //   フロー: ファイル選択 → parseQuestionsXlsx(X01) → classifyRows(X01) で
+  //   ID不存在の事前検出 + 新規/上書き件数の導出 → プレビュー → import_questions RPC(X03)
+  // ---------------------------------------------------------------------------
+
+  const resetImportState = () => {
+    setImportErrors([]);
+    setImportRows([]);
+    setImporting(false);
+    if (importFileRef.current) importFileRef.current.value = '';
+  };
+
+  // RowError(X01 は message を持たない)の表示整形。行全体エラー(row=0)は理由のみ。
+  const formatImportError = (e: RowError): string =>
+    e.row === 0 ? e.reason : `行${e.row}: [${e.column}] ${e.reason}`;
+
+  const handleImportFile = async (file: File | null) => {
+    resetImportState();
+    if (!file) return;
+    try {
+      const buf = await file.arrayBuffer();
+      const { rows, errors } = await parseQuestionsXlsx(buf);
+      // A3: ID不存在エラーの検出は X01 の classifyRows から導出(独自実装しない)。
+      const knownIds = new Set(questions.map((q) => q.id));
+      const idErrors: RowError[] = classifyRows(rows, knownIds).flatMap((r) =>
+        r.kind === 'error' ? [r.error] : []
+      );
+      const allErrors = [...errors, ...idErrors];
+      if (allErrors.length > 0) {
+        setImportErrors(allErrors);
+        setImportRows([]);
+        return;
+      }
+      if (rows.length === 0) {
+        setImportErrors([{ row: 0, column: '', reason: '取り込み可能なデータ行がありません' }]);
+        return;
+      }
+      setImportErrors([]);
+      setImportRows(rows);
+    } catch {
+      setImportErrors([
+        { row: 0, column: '', reason: 'ファイルの読み込みに失敗しました（.xlsx を選択してください）' },
+      ]);
+    }
+  };
+
+  // プレビュー算出(エラーゼロ時)。新規/上書き件数は A3 の classifyRows から導出。
+  // 単元は名前一致、カテゴリは「単元名::カテゴリ名」キーで既存判定(X03 RPC と同粒度)。
+  const importPreview = useMemo(() => {
+    const knownIds = new Set(questions.map((q) => q.id));
+    const resolutions = classifyRows(importRows, knownIds);
+    const newCount = resolutions.filter((r) => r.kind === 'insert').length;
+    const updateCount = resolutions.filter((r) => r.kind === 'update').length;
+
+    const existingUnitNames = new Set(units.map((u) => u.name.trim()));
+    const existingCatKeys = new Set(
+      categories.map((c) => {
+        const unitName = units.find((u) => u.id === c.unitId)?.name?.trim() ?? '';
+        return `${unitName}::${c.name.trim()}`;
+      })
+    );
+    const newUnits = new Set<string>();
+    const newCategories = new Set<string>();
+    for (const r of importRows) {
+      const un = r.unitName.trim();
+      if (un && !existingUnitNames.has(un)) newUnits.add(un);
+      const key = `${un}::${r.categoryName.trim()}`;
+      if (r.categoryName.trim() && !existingCatKeys.has(key)) {
+        newCategories.add(`${un} / ${r.categoryName.trim()}`);
+      }
+    }
+    return {
+      newCount,
+      updateCount,
+      newUnits: Array.from(newUnits),
+      newCategories: Array.from(newCategories),
+    };
+  }, [importRows, questions, units, categories]);
+
+  const handleImportSubmit = async () => {
+    if (importRows.length === 0 || importErrors.length > 0) return;
+    setImporting(true);
+    try {
+      // A4: id 空文字 → null / A7: row_number を各行に含める / A8: p_rows で RPC 呼び出し。
+      const p_rows = importRows.map((r) => ({
+        row_number: r.rowNumber,
+        id: r.id === '' ? null : r.id,
+        unit_name: r.unitName,
+        category_name: r.categoryName,
+        text: r.text,
+        option_a: r.optionA,
+        option_b: r.optionB,
+        option_c: r.optionC,
+        option_d: r.optionD,
+        correct_answer: r.correctAnswer,
+        answer_method: r.answerMethod,
+        explanation: r.explanation,
+        is_active: r.isActive,
+      }));
+
+      const { data, error } = await supabase.rpc('import_questions', { p_rows });
+      if (error) {
+        // RPC が全件ロールバック(例: 行N の ID 不存在)を返した場合。ダイアログは閉じない。
+        toast.error(`インポートに失敗しました: ${error.message}`);
+        return;
+      }
+      const s = data as {
+        inserted: number;
+        updated: number;
+        created_units: number;
+        created_categories: number;
+      };
+      toast.success(
+        `インポート完了: 新規${s.inserted}件 / 上書き${s.updated}件` +
+          (s.created_units ? ` / 単元${s.created_units}件作成` : '') +
+          (s.created_categories ? ` / カテゴリ${s.created_categories}件作成` : '')
+      );
+      setIsImportDialogOpen(false);
+      resetImportState();
+      await loadData();
+    } finally {
+      setImporting(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
@@ -407,6 +541,104 @@ export const QuestionsManagement: React.FC = () => {
                   <Download className="h-4 w-4 mr-2" />
                   絞り込み結果をエクスポート
                 </Button>
+                <Dialog
+                  open={isImportDialogOpen}
+                  onOpenChange={(open) => {
+                    setIsImportDialogOpen(open);
+                    if (!open) resetImportState();
+                  }}
+                >
+                  <DialogTrigger asChild>
+                    <Button variant="outline" onClick={() => resetImportState()}>
+                      <Upload className="h-4 w-4 mr-2" />
+                      xlsxインポート
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="w-[92vw] sm:w-[90vw] lg:w-[80vw] max-w-none max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                      <DialogTitle>xlsxインポートで問題を一括登録</DialogTitle>
+                      <DialogDescription>
+                        エクスポートした xlsx を編集して取り込みます。ID列が空の行は新規作成、既存問題のIDと一致する行は上書きされます。未存在の単元・カテゴリは名前で自動作成されます。
+                      </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-4 pt-4">
+                      <div className="space-y-2">
+                        <Label>xlsxファイル</Label>
+                        <Input
+                          ref={importFileRef}
+                          type="file"
+                          accept=".xlsx"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0] ?? null;
+                            void handleImportFile(f);
+                          }}
+                        />
+                        <p className="text-xs text-gray-500">
+                          列: ID / 単元 / カテゴリ / 問題文 / 選択肢A-D / 正解 / 回答方式 / 解説 / 公開。エクスポートした xlsx をそのまま取り込めます。
+                        </p>
+                      </div>
+
+                      {importErrors.length > 0 && (
+                        <div className="border rounded-md p-3 bg-red-50">
+                          <div className="font-semibold text-red-700 mb-2">エラー</div>
+                          <ul className="text-sm text-red-700 list-disc pl-5 space-y-1">
+                            {importErrors.slice(0, 20).map((e, idx) => (
+                              <li key={idx}>{formatImportError(e)}</li>
+                            ))}
+                          </ul>
+                          {importErrors.length > 20 && (
+                            <div className="text-xs text-red-700 mt-2">
+                              ほか {importErrors.length - 20} 件
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {importErrors.length === 0 && importRows.length > 0 && (
+                        <div className="space-y-2">
+                          <div className="text-sm text-gray-700">
+                            新規 {importPreview.newCount} 件 / 上書き {importPreview.updateCount} 件
+                          </div>
+                          {importPreview.newUnits.length > 0 && (
+                            <div className="text-sm text-gray-700">
+                              自動作成される単元: {importPreview.newUnits.slice(0, 10).join(', ')}
+                              {importPreview.newUnits.length > 10 &&
+                                ` ほか ${importPreview.newUnits.length - 10} 件`}
+                            </div>
+                          )}
+                          {importPreview.newCategories.length > 0 && (
+                            <div className="text-sm text-gray-700">
+                              自動作成されるカテゴリ: {importPreview.newCategories.slice(0, 10).join(', ')}
+                              {importPreview.newCategories.length > 10 &&
+                                ` ほか ${importPreview.newCategories.length - 10} 件`}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setIsImportDialogOpen(false);
+                            resetImportState();
+                          }}
+                        >
+                          キャンセル
+                        </Button>
+                        <Button
+                          disabled={
+                            importRows.length === 0 || importErrors.length > 0 || importing
+                          }
+                          onClick={() => void handleImportSubmit()}
+                        >
+                          {importing ? 'インポート中...' : 'インポート'}
+                        </Button>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
                 <Button
                   variant="outline"
                   disabled={selectedIds.length === 0}
