@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useState, ReactNode } from 'react';
 
 export interface SelectedCompany {
   id: string;
@@ -32,18 +32,23 @@ export const CompanyProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
   });
 
-  const selectCompany = (company: SelectedCompany) => {
+  const selectCompany = useCallback((company: SelectedCompany) => {
     setSelectedCompany(company);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(company));
-  };
+  }, []);
 
-  const clearCompany = () => {
+  const clearCompany = useCallback(() => {
     setSelectedCompany(null);
     localStorage.removeItem(STORAGE_KEY);
-  };
+  }, []);
+
+  const value = useMemo(
+    () => ({ selectedCompany, selectCompany, clearCompany }),
+    [selectedCompany, selectCompany, clearCompany]
+  );
 
   return (
-    <CompanyContext.Provider value={{ selectedCompany, selectCompany, clearCompany }}>
+    <CompanyContext.Provider value={value}>
       {children}
     </CompanyContext.Provider>
   );

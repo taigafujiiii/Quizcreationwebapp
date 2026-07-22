@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, ReactNode } from 'react';
 import type { User as AppUser } from '../types';
 import { supabase } from '../lib/supabase';
 
@@ -68,7 +68,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [loading, setLoading] = useState(true);
   const refreshRequestIdRef = useRef(0);
 
-  const refreshProfile = async () => {
+  const refreshProfile = useCallback(async () => {
     const requestId = ++refreshRequestIdRef.current;
     let { data: sessionData, error: sessionError } = await withTimeout(
       supabase.auth.getSession(),
@@ -115,7 +115,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setUser(appUser);
     }
     return appUser;
-  };
+  }, [user]);
 
   useEffect(() => {
     const init = async () => {
@@ -147,7 +147,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
   }, []);
 
-  const login = async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -159,15 +159,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const appUser = await refreshProfile();
     return appUser;
-  };
+  }, [refreshProfile]);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     await supabase.auth.signOut();
     setUser(null);
-  };
+  }, []);
+
+  const value = useMemo(
+    () => ({ user, loading, login, logout, refreshProfile }),
+    [user, loading, login, logout, refreshProfile]
+  );
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, refreshProfile }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
