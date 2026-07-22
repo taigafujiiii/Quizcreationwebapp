@@ -54,6 +54,47 @@ const UUID_RE =
 
 const isUuid = (v: unknown): v is string => typeof v === "string" && UUID_RE.test(v);
 
+// ---------------------------------------------------------------------------
+// R09: rate limiting for the UNAUTHENTICATED public endpoints
+// (/public/verify-pin, /public/register-request). Backed by public_action_logs
+// (migration 20260724000000). Mirrors the /admin/invite invite_logs pattern:
+// window-count + graceful-skip when the table isn't migrated yet.
+// ---------------------------------------------------------------------------
+const PUBLIC_ACTION_WINDOW_MINUTES = 10;
+// verify-pin is IP-only (no email to key on), so keep the per-IP cap tight to
+// throttle PIN brute-force while leaving headroom for genuine typos (B10).
+const VERIFY_PIN_MAX_PER_IP = 10;
+// register-request: email is the primary key (S6 anti-bombing → 1 invite/email
+// per window); IP is the secondary guard against spraying many emails.
+const REGISTER_MAX_PER_EMAIL = 1;
+const REGISTER_MAX_PER_IP = 5;
+
+// Resolve the client IP for rate-limit bucketing.
+// Fallback chain: x-forwarded-for (first hop) → x-real-ip → 'unknown'.
+// B10 CAVEAT: this depends on the Supabase Edge runtime actually forwarding the
+// real client IP in x-forwarded-for. If it does not (value collapses to
+// 'unknown'), the IP-based limit degrades into a SINGLE GLOBAL bucket shared by
+// all callers — for verify-pin that could lock out legitimate users, and for
+// register-request the email-based limit remains the real protection. This must
+// be verified against production logs post-deploy (see PR notes / escalation).
+const getClientIp = (c: any): string => {
+  const xff = c.req.header('x-forwarded-for');
+  if (xff) {
+    const first = xff.split(',')[0]?.trim();
+    if (first) return first;
+  }
+  const xri = c.req.header('x-real-ip');
+  if (xri && xri.trim()) return xri.trim();
+  return 'unknown';
+};
+
+// Detect the "public_action_logs not migrated yet" error so rate limiting can be
+// skipped gracefully instead of breaking the public endpoints (deploy ordering).
+const isMissingPublicActionLogs = (msg: string | undefined): boolean => {
+  const m = (msg || '').toLowerCase();
+  return m.includes('public_action_logs') || m.includes('does not exist');
+};
+
 const normalizeRole = (v: unknown): "user" | "admin" | null => {
   if (v === undefined || v === null) return null;
   if (typeof v !== "string") return null;
@@ -151,11 +192,55 @@ app.post('/public/verify-pin', async (c) => {
 
   if (!pin) return c.json({ error: 'PINを入力してください' }, 400);
 
+  // --- R09 rate limit (DESIGN.md S3): throttle PIN brute-force by client IP. ---
+  const ip = getClientIp(c);
+  const sinceIso = new Date(Date.now() - PUBLIC_ACTION_WINDOW_MINUTES * 60_000).toISOString();
+
+  let skipRateLimit = false;
+  const countRes = await adminClient
+    .from('public_action_logs')
+    .select('id', { count: 'exact', head: true })
+    .eq('action', 'verify_pin')
+    .eq('ip', ip)
+    .gte('created_at', sinceIso);
+
+  if (countRes.error) {
+    // Table not migrated yet → don't break login (graceful degradation).
+    if (isMissingPublicActionLogs(countRes.error.message)) {
+      skipRateLimit = true;
+    }
+  }
+
+  if (!skipRateLimit && (countRes.count ?? 0) >= VERIFY_PIN_MAX_PER_IP) {
+    await adminClient.from('public_action_logs').insert({
+      action: 'verify_pin',
+      ip,
+      status: 'blocked_rate_limit',
+      meta: { windowMinutes: PUBLIC_ACTION_WINDOW_MINUTES, maxPerIpPerWindow: VERIFY_PIN_MAX_PER_IP },
+    });
+    return c.json({ error: 'PIN試行が多すぎます。しばらく待って再試行してください' }, 429);
+  }
+
+  // PIN lookup is unchanged: the partial UNIQUE index (R09 migration) guarantees
+  // this .maybeSingle() can never receive more than one row.
   const { data: company, error } = await adminClient
     .from('companies')
     .select('id, name, allowed_unit_ids')
     .eq('pin', pin)
     .maybeSingle();
+
+  const matched = !error && !!company;
+
+  // Log the attempt (any status counts toward the window, so failed guesses are
+  // what drive the brute-force throttle). Skipped only when the table is absent.
+  if (!skipRateLimit) {
+    await adminClient.from('public_action_logs').insert({
+      action: 'verify_pin',
+      ip,
+      status: matched ? 'ok' : 'failed',
+      meta: {},
+    });
+  }
 
   if (error || !company) return c.json({ error: 'PINが正しくありません' }, 401);
 
@@ -266,7 +351,67 @@ app.post('/public/register-request', async (c) => {
   const allowedUnitIds: string[] = company.allowed_unit_ids || [];
   const username = `${lastName} ${firstName}`;
 
-  // Check for existing active account — stale (soft-deleted) users are cleaned up and re-invited
+  // --- R09 rate limit (DESIGN.md S6): throttle self-registration by email AND IP. ---
+  // Runs AFTER input/company validation (so bad input still returns 400 without
+  // consuming a slot) but BEFORE listUsers + inviteUserByEmail, so an invite email
+  // is never sent for a rate-limited request (anti-bombing / provider-quota guard).
+  const ip = getClientIp(c);
+  const sinceIso = new Date(Date.now() - PUBLIC_ACTION_WINDOW_MINUTES * 60_000).toISOString();
+
+  let skipRateLimit = false;
+  const emailCountRes = await adminClient
+    .from('public_action_logs')
+    .select('id', { count: 'exact', head: true })
+    .eq('action', 'register_request')
+    .eq('email', emailRaw)
+    .gte('created_at', sinceIso);
+  const ipCountRes = await adminClient
+    .from('public_action_logs')
+    .select('id', { count: 'exact', head: true })
+    .eq('action', 'register_request')
+    .eq('ip', ip)
+    .gte('created_at', sinceIso);
+
+  if (emailCountRes.error || ipCountRes.error) {
+    // Table not migrated yet → don't break registration (graceful degradation).
+    const msg = `${emailCountRes.error?.message || ''} ${ipCountRes.error?.message || ''}`;
+    if (isMissingPublicActionLogs(msg)) skipRateLimit = true;
+  }
+
+  if (
+    !skipRateLimit &&
+    ((emailCountRes.count ?? 0) >= REGISTER_MAX_PER_EMAIL || (ipCountRes.count ?? 0) >= REGISTER_MAX_PER_IP)
+  ) {
+    await adminClient.from('public_action_logs').insert({
+      action: 'register_request',
+      ip,
+      email: emailRaw,
+      status: 'blocked_rate_limit',
+      meta: {
+        windowMinutes: PUBLIC_ACTION_WINDOW_MINUTES,
+        maxPerEmailPerWindow: REGISTER_MAX_PER_EMAIL,
+        maxPerIpPerWindow: REGISTER_MAX_PER_IP,
+      },
+    });
+    return c.json({ error: '登録申請が多すぎます。しばらく待って再試行してください' }, 429);
+  }
+
+  // Record the attempt before doing any expensive/side-effecting work. With
+  // maxPerEmailPerWindow=1 this row is what blocks a repeat within the window,
+  // so a duplicate submit can never trigger a second invite email (S6).
+  if (!skipRateLimit) {
+    await adminClient.from('public_action_logs').insert({
+      action: 'register_request',
+      ip,
+      email: emailRaw,
+      status: 'attempt',
+      meta: {},
+    });
+  }
+
+  // Check for existing active account — stale (soft-deleted) users are cleaned up and re-invited.
+  // Moved AFTER the rate-limit gate: listUsers({perPage:1000}) is expensive, so it must not run
+  // for throttled requests (S6). The dedup logic itself is unchanged.
   const existingUsersRes = await adminClient.auth.admin.listUsers({ page: 1, perPage: 1000 });
   if (!existingUsersRes.error) {
     const existingUser = (existingUsersRes.data.users || []).find(
