@@ -25,6 +25,7 @@ export const ResetPassword: React.FC = () => {
         if (code) {
           await supabase.auth.exchangeCodeForSession(code);
         } else {
+          // @ts-expect-error TODO(R11/S8): getSessionFromUrl は supabase-js 2.56 に存在しない。R11 で正規APIに置換
           await supabase.auth.getSessionFromUrl({ storeSession: true });
         }
         const { data } = await supabase.auth.getSession();
