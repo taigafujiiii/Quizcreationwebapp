@@ -7,7 +7,6 @@ interface AuthContextType {
   loading: boolean;
   login: (email: string, password: string) => Promise<AppUser | null>;
   logout: () => Promise<void>;
-  register: (email: string, password: string) => Promise<void>;
   refreshProfile: () => Promise<AppUser | null>;
 }
 
@@ -167,22 +166,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setUser(null);
   };
 
-  const register = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: `${window.location.origin}/verify`,
-      },
-    });
-
-    if (error) {
-      throw error;
-    }
-  };
-
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, register, refreshProfile }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );
