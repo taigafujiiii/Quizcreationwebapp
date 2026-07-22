@@ -32,6 +32,10 @@ order by n desc;
 npm run migrate
 ```
 
+- 新しいSupabase CLIでは内部で `supabase link`(プロジェクト紐付け)→ `db push` の順に実行される
+- 途中で **DBパスワードの入力を求められることがある**(Supabase Dashboard → Project Settings → Database のパスワード)。プロンプトに入力すればOK
+- 適用前に `--dry-run` で確認したい場合: `npx supabase db push --dry-run`(link後)
+
 適用されるmigration:
 | ファイル | 内容 |
 |---------|------|

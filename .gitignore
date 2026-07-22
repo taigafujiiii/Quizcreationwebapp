@@ -10,3 +10,6 @@ playwright-report
 .env
 .env.*
 !.env.example
+
+# supabase link の生成物（プロジェクト参照キャッシュ）
+supabase/.temp
