@@ -85,6 +85,7 @@ const establishSessionFromUrl = async (rawUrl: string) => {
   }
 
   // Fallback (kept for compatibility)
+  // @ts-expect-error TODO(R11/S8): getSessionFromUrl は supabase-js 2.56 に存在しない。R11 で正規APIに置換
   const { error } = await supabase.auth.getSessionFromUrl({ storeSession: true });
   if (error) throw error;
 };

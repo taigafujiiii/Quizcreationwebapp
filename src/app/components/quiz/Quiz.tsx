@@ -194,7 +194,6 @@ export const Quiz: React.FC = () => {
     <div className="min-h-screen bg-gray-50">
       <Header
         courseType={isAssignmentCourse ? 'assignment' : 'free'}
-        isQuizAttempt={true}
         onHomeClick={handleHomeClick}
       />
 
